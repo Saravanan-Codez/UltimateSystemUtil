@@ -34,7 +34,7 @@ if ([string]::IsNullOrEmpty($PSScriptRoot)) {
     Write-Host "==================================================" -ForegroundColor Cyan
     Write-Host "Running in web-load context. Bootstrapping files..." -ForegroundColor Gray
     
-    $zipUrl = "https://github.com/FalkonLabs/UltimateSystemCleaner/archive/refs/heads/main.zip"
+    $zipUrl = "https://github.com/Saravanan-Codez/UltimateSystemCleaner/archive/refs/heads/main.zip"
     $tempDir = Join-Path $env:TEMP "UltimateSystemCleaner-Bootstrap"
     
     try {
@@ -76,6 +76,9 @@ if ([string]::IsNullOrEmpty($PSScriptRoot)) {
     }
     return
 }
+
+# Unblock downloaded script files to support manual ZIP downloads
+Get-ChildItem -LiteralPath $PSScriptRoot -Include *.ps1,*.psm1 -Recurse -ErrorAction SilentlyContinue | Unblock-File -ErrorAction SilentlyContinue
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
