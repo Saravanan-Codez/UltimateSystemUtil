@@ -3,9 +3,8 @@ Set-StrictMode -Version Latest
 function Get-UscDefaultConfig {
     [CmdletBinding()]
     param()
-
     [pscustomobject]@{
-        Version = '3.0'
+        Version = '0.1'
         LogDirectory = Join-Path $env:ProgramData 'UltimateSystemCleaner\Logs'
         ReportDirectory = Join-Path $env:ProgramData 'UltimateSystemCleaner\Reports'
         MaxRunspaces = [Math]::Max(2, [Environment]::ProcessorCount)

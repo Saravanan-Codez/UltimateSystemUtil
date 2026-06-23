@@ -287,16 +287,23 @@ function Show-UscMenu {
     [CmdletBinding()]
     param([psobject]$Config)
 
-    $adminStatus = if (Test-UscAdministrator) { 'Elevated (Admin)' } else { 'Standard User (Some functions restricted)' }
-    $sigStatus = if ($unsignedCount -eq 0) { 'All Modules Validly Signed' } else { "$unsignedCount Unsigned Modules Found" }
+    $adminStatus = 'Standard User (Some functions restricted)'
+    if (Test-UscAdministrator) { $adminStatus = 'Elevated (Admin)' }
+
+    $sigStatus = "$unsignedCount Unsigned Modules Found"
+    $sigColor = 'Yellow'
+    if ($unsignedCount -eq 0) {
+        $sigStatus = 'All Modules Validly Signed'
+        $sigColor = 'Green'
+    }
 
     while ($true) {
         Clear-Host
         Write-Host '==================================================' -ForegroundColor Cyan
-        Write-Host '          ULTIMATE SYSTEM CLEANER v3.0            ' -ForegroundColor White -BackgroundColor Blue
+        Write-Host '          ULTIMATE SYSTEM CLEANER v0.1            ' -ForegroundColor White -BackgroundColor Blue
         Write-Host '==================================================' -ForegroundColor Cyan
         Write-Host " Privilege Context : $adminStatus" -ForegroundColor Yellow
-        Write-Host " Signature Audit   : $sigStatus" -ForegroundColor (if ($unsignedCount -eq 0) { 'Green' } else { 'Yellow' })
+        Write-Host " Signature Audit   : $sigStatus" -ForegroundColor $sigColor
         
         $drive = Get-UscDriveSnapshot | Select-Object -First 1
         if ($drive) {
