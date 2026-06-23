@@ -170,8 +170,14 @@ function Invoke-UscAnalysis {
     [CmdletBinding()]
     param([psobject]$Config)
 
+    Start-UscProgress -Activity 'Analyzing Disk Usage' -Status 'Retrieving drive snapshots...' -Id 1
     $drive = @(Get-UscDriveSnapshot)
+
+    Update-UscProgress -Activity 'Analyzing Disk Usage' -Status 'Scanning for cleanup opportunities...' -PercentComplete 50 -Id 1
     $opportunities = @(Get-UscCleanupOpportunity -Config $Config)
+
+    Complete-UscProgress -Activity 'Analyzing Disk Usage' -Id 1
+
     $results = [System.Collections.Generic.List[object]]::new()
     foreach ($item in $opportunities) {
         $results.Add((New-UscOperationResult -Name "Opportunity: $($item.Path)" -Category Analyze -Status Succeeded -BytesBefore $item.Bytes -Message "$($item.Files) candidate files"))
@@ -450,8 +456,6 @@ function Show-UscScheduleHelper {
 }
 
 # Main script flow execution
-$script:Started = Get-Date
-$runId = Get-Date -Format 'yyyyMMdd-HHmmss'
 if ([string]::IsNullOrWhiteSpace($ConfigPath)) {
     $script:ConfigPath = Join-Path $PSScriptRoot 'Config\settings.json'
 }
@@ -464,94 +468,153 @@ $config.LogDirectory = [Environment]::ExpandEnvironmentVariables($config.LogDire
 $config.ReportDirectory = [Environment]::ExpandEnvironmentVariables($config.ReportDirectory)
 
 $dryRun = [bool]($WhatIfOnly -or $config.DryRunDefault)
-$logFile = Initialize-UscLogger -LogDirectory $config.LogDirectory -RunId $runId
 $script:BeforeSnapshot = @(Get-UscDriveSnapshot)
-$mode = $PSCmdlet.ParameterSetName
-$confirmedNuke = $ConfirmNuclear
 
 if ($PSCmdlet.ParameterSetName -eq 'Menu') {
-    $choice = Show-UscMenu -Config $config
-    $mode = $choice.Mode
-    $confirmedNuke = $false
-    if ($choice.ContainsKey('ConfirmNuclear')) {
-        $confirmedNuke = [bool]$choice.ConfirmNuclear
+    # Interactive TUI Loop
+    while ($true) {
+        $runId = Get-Date -Format 'yyyyMMdd-HHmmss'
+        $script:Started = Get-Date
+        $logFile = Initialize-UscLogger -LogDirectory $config.LogDirectory -RunId $runId
+        
+        # Re-read config in case settings were changed in config editor
+        $config = Read-UscConfig -Path $script:ConfigPath
+        $config.LogDirectory = [Environment]::ExpandEnvironmentVariables($config.LogDirectory)
+        $config.ReportDirectory = [Environment]::ExpandEnvironmentVariables($config.ReportDirectory)
+        $dryRun = [bool]($WhatIfOnly -or $config.DryRunDefault)
+
+        $choice = Show-UscMenu -Config $config
+        $mode = $choice.Mode
+        if ($mode -eq 'Exit') { break }
+
+        $confirmedNuke = $false
+        if ($choice.ContainsKey('ConfirmNuclear')) {
+            $confirmedNuke = [bool]$choice.ConfirmNuclear
+        }
+
+        Write-UscLog -Level Audit -Message 'Run started' -Data @{ Mode = $mode; WhatIfOnly = $dryRun; ConfigPath = $script:ConfigPath }
+        $results = [System.Collections.Generic.List[object]]::new()
+
+        try {
+            switch ($mode) {
+                'Analyze' { 
+                    $results.AddRange(@(Invoke-UscAnalysis -Config $config)) 
+                }
+                'DeepSpace' {
+                    $deepScan = Get-UscDeepSpaceAnalysis -RootPath $env:SystemDrive.TrimEnd('\') -MaxItems 10
+                    Write-Host '==================================================' -ForegroundColor Cyan
+                    Write-Host '            DEEP DISK SPACE ANALYSIS              ' -ForegroundColor White -BackgroundColor Blue
+                    Write-Host '==================================================' -ForegroundColor Cyan
+                    Write-Host "Scanned items in: $($deepScan.RootPath) ($($deepScan.TotalInspectedFiles) files)"
+                    Write-Host 'Category Breakdown:'
+                    Write-Host " - Caches       : $(Format-UscBytes -Bytes $deepScan.Categories.Caches)"
+                    Write-Host " - Logs         : $(Format-UscBytes -Bytes $deepScan.Categories.Logs)"
+                    Write-Host " - Dumps        : $(Format-UscBytes -Bytes $deepScan.Categories.Dumps)"
+                    Write-Host " - Updates/Temp : $(Format-UscBytes -Bytes $deepScan.Categories.Updates)"
+                    Write-Host " - Other System : $(Format-UscBytes -Bytes $deepScan.Categories.SystemOther)"
+                    Write-Host 'Top 10 Largest Files:' -ForegroundColor Yellow
+                    $deepScan.TopFiles | ForEach-Object {
+                        Write-Host " - $(Format-UscBytes -Bytes $_.Size) : $($_.Path)"
+                    }
+                    Write-Host '==================================================' -ForegroundColor Cyan
+                    $results.Add((New-UscOperationResult -Name 'Deep Space Analysis' -Category Analyze -Status Succeeded -Message "Scanned $($deepScan.TotalInspectedFiles) files"))
+                }
+                'ComponentStore' { 
+                    $analysis = Get-UscComponentStoreAnalysis
+                    $results.Add((New-UscOperationResult -Name 'Component Store Analysis' -Category Analyze -Status Succeeded -Metadata @{ Analysis = $analysis })) 
+                    Write-Host "Store Analysis Status: Cleanup recommended? $($analysis.RecommendedCleanup)" -ForegroundColor Yellow
+                }
+                default { 
+                    $results.AddRange(@(Invoke-UscCleanupMode -Mode $mode -Config $config -WhatIfOnly:$dryRun -ConfirmNuclear:$confirmedNuke)) 
+                }
+            }
+        }
+        catch {
+            Write-UscLog -Level Critical -Message 'Run failed' -Exception $_.Exception
+            $results.Add((New-UscOperationResult -Name 'Run' -Category Clean -Status Failed -Message $_.Exception.Message))
+        }
+
+        $run = New-UscRunRecord -RunId $runId -Mode $mode -Results @($results) -Config $config -WhatIfOnly:$dryRun
+        $reportPaths = [System.Collections.Generic.List[string]]::new()
+
+        if ($GenerateReport -or $mode -in 'Analyze','DeepSpace','ComponentStore','Safe','Aggressive','Nuclear') {
+            $reportPaths.Add((New-UscJsonReport -Run $run -OutputDirectory $config.ReportDirectory))
+            $reportPaths.Add((New-UscCsvReport -Results @($results) -OutputDirectory $config.ReportDirectory -RunId $runId))
+            $reportPaths.Add((New-UscHtmlReport -Run $run -OutputDirectory $config.ReportDirectory))
+        }
+
+        Write-UscLog -Level Audit -Message 'Run finished' -Data @{ Mode = $mode; TotalBytesFreed = $run.TotalBytesFreed; Reports = @($reportPaths); LogFile = $logFile }
+
+        # Display summary to user
+        Write-Host '==================================================' -ForegroundColor Cyan
+        Write-Host '          ULTIMATE SYSTEM CLEANER SUMMARY         ' -ForegroundColor White -BackgroundColor Blue
+        Write-Host '==================================================' -ForegroundColor Cyan
+        Write-Host " Run Identifier : $runId"
+        Write-Host " Mode Executed  : $mode"
+        Write-Host " Dry Run Status : $dryRun"
+        Write-Host " Total Freed    : $(Format-UscBytes -Bytes $run.TotalBytesFreed)" -ForegroundColor Green
+        Write-Host " Log File Location: $logFile"
+        Write-Host ' Reports Generated:'
+        $reportPaths | ForEach-Object { Write-Host "  - $_" -ForegroundColor Yellow }
+        Write-Host '==================================================' -ForegroundColor Cyan
+        
+        $null = Read-Host 'Press Enter to return to the main menu'
     }
 }
-elseif ($Safe) { $mode = 'Safe' }
-elseif ($Aggressive) { $mode = 'Aggressive' }
-elseif ($Nuclear) { $mode = 'Nuclear' }
-elseif ($Analyze) { $mode = 'Analyze' }
-elseif ($ComponentStore) { $mode = 'ComponentStore' }
-elseif ($InstallScheduledTask) { $mode = 'InstallScheduledTask' }
-elseif ($RemoveScheduledTask) { $mode = 'RemoveScheduledTask' }
+else {
+    # Non-interactive CLI Mode (runs once)
+    $runId = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $script:Started = Get-Date
+    $logFile = Initialize-UscLogger -LogDirectory $config.LogDirectory -RunId $runId
+    
+    $mode = $PSCmdlet.ParameterSetName
+    if ($Safe) { $mode = 'Safe' }
+    elseif ($Aggressive) { $mode = 'Aggressive' }
+    elseif ($Nuclear) { $mode = 'Nuclear' }
+    elseif ($Analyze) { $mode = 'Analyze' }
+    elseif ($ComponentStore) { $mode = 'ComponentStore' }
+    elseif ($InstallScheduledTask) { $mode = 'InstallScheduledTask' }
+    elseif ($RemoveScheduledTask) { $mode = 'RemoveScheduledTask' }
 
-if ($mode -eq 'Exit') { return }
+    Write-UscLog -Level Audit -Message 'Run started' -Data @{ Mode = $mode; WhatIfOnly = $dryRun; ConfigPath = $script:ConfigPath }
+    $results = [System.Collections.Generic.List[object]]::new()
 
-Write-UscLog -Level Audit -Message 'Run started' -Data @{ Mode = $mode; WhatIfOnly = $dryRun; ConfigPath = $script:ConfigPath }
-$results = [System.Collections.Generic.List[object]]::new()
-
-try {
-    switch ($mode) {
-        'Analyze' { 
-            $results.AddRange(@(Invoke-UscAnalysis -Config $config)) 
-        }
-        'DeepSpace' {
-            $deepScan = Get-UscDeepSpaceAnalysis -RootPath $env:SystemDrive.TrimEnd('\') -MaxItems 10
-            Write-Host '==================================================' -ForegroundColor Cyan
-            Write-Host '            DEEP DISP SPACE ANALYSIS              ' -ForegroundColor White -BackgroundColor Blue
-            Write-Host '==================================================' -ForegroundColor Cyan
-            Write-Host "Scanned items in: $($deepScan.RootPath) ($($deepScan.TotalInspectedFiles) files)"
-            Write-Host 'Category Breakdown:'
-            Write-Host " - Caches       : $(Format-UscBytes -Bytes $deepScan.Categories.Caches)"
-            Write-Host " - Logs         : $(Format-UscBytes -Bytes $deepScan.Categories.Logs)"
-            Write-Host " - Dumps        : $(Format-UscBytes -Bytes $deepScan.Categories.Dumps)"
-            Write-Host " - Updates/Temp : $(Format-UscBytes -Bytes $deepScan.Categories.Updates)"
-            Write-Host " - Other System : $(Format-UscBytes -Bytes $deepScan.Categories.SystemOther)"
-            Write-Host 'Top 10 Largest Files:' -ForegroundColor Yellow
-            $deepScan.TopFiles | ForEach-Object {
-                Write-Host " - $(Format-UscBytes -Bytes $_.Size) : $($_.Path)"
+    try {
+        switch ($mode) {
+            'Analyze' { 
+                $results.AddRange(@(Invoke-UscAnalysis -Config $config)) 
             }
-            Write-Host '==================================================' -ForegroundColor Cyan
-            $results.Add((New-UscOperationResult -Name 'Deep Space Analysis' -Category Analyze -Status Succeeded -Message "Scanned $($deepScan.TotalInspectedFiles) files"))
-            $null = Read-Host 'Press Enter to continue'
-        }
-        'ComponentStore' { 
-            $analysis = Get-UscComponentStoreAnalysis
-            $results.Add((New-UscOperationResult -Name 'Component Store Analysis' -Category Analyze -Status Succeeded -Metadata @{ Analysis = $analysis })) 
-            if ($PSCmdlet.ParameterSetName -eq 'Menu') {
-                Write-Host "Store Analysis Status: Cleanup recommended? $($analysis.RecommendedCleanup)" -ForegroundColor Yellow
-                $null = Read-Host 'Press Enter to continue'
+            'ComponentStore' { 
+                $analysis = Get-UscComponentStoreAnalysis
+                $results.Add((New-UscOperationResult -Name 'Component Store Analysis' -Category Analyze -Status Succeeded -Metadata @{ Analysis = $analysis })) 
             }
-        }
-        'InstallScheduledTask' { 
-            $results.Add((Register-UscScheduledTask -ScriptPath $PSCommandPath)) 
-        }
-        'RemoveScheduledTask' { 
-            $results.Add((Unregister-UscScheduledTask)) 
-        }
-        default { 
-            $results.AddRange(@(Invoke-UscCleanupMode -Mode $mode -Config $config -WhatIfOnly:$dryRun -ConfirmNuclear:$confirmedNuke)) 
+            'InstallScheduledTask' { 
+                $results.Add((Register-UscScheduledTask -ScriptPath $PSCommandPath)) 
+            }
+            'RemoveScheduledTask' { 
+                $results.Add((Unregister-UscScheduledTask)) 
+            }
+            default { 
+                $results.AddRange(@(Invoke-UscCleanupMode -Mode $mode -Config $config -WhatIfOnly:$dryRun -ConfirmNuclear:$ConfirmNuclear)) 
+            }
         }
     }
-}
-catch {
-    Write-UscLog -Level Critical -Message 'Run failed' -Exception $_.Exception
-    $results.Add((New-UscOperationResult -Name 'Run' -Category Clean -Status Failed -Message $_.Exception.Message))
-}
+    catch {
+        Write-UscLog -Level Critical -Message 'Run failed' -Exception $_.Exception
+        $results.Add((New-UscOperationResult -Name 'Run' -Category Clean -Status Failed -Message $_.Exception.Message))
+    }
 
-$run = New-UscRunRecord -RunId $runId -Mode $mode -Results @($results) -Config $config -WhatIfOnly:$dryRun
-$reportPaths = [System.Collections.Generic.List[string]]::new()
+    $run = New-UscRunRecord -RunId $runId -Mode $mode -Results @($results) -Config $config -WhatIfOnly:$dryRun
+    $reportPaths = [System.Collections.Generic.List[string]]::new()
 
-if ($GenerateReport -or $mode -in 'Analyze','DeepSpace','ComponentStore','Safe','Aggressive','Nuclear') {
-    $reportPaths.Add((New-UscJsonReport -Run $run -OutputDirectory $config.ReportDirectory))
-    $reportPaths.Add((New-UscCsvReport -Results @($results) -OutputDirectory $config.ReportDirectory -RunId $runId))
-    $reportPaths.Add((New-UscHtmlReport -Run $run -OutputDirectory $config.ReportDirectory))
-}
+    if ($GenerateReport -or $mode -in 'Analyze','Safe','Aggressive','Nuclear') {
+        $reportPaths.Add((New-UscJsonReport -Run $run -OutputDirectory $config.ReportDirectory))
+        $reportPaths.Add((New-UscCsvReport -Results @($results) -OutputDirectory $config.ReportDirectory -RunId $runId))
+        $reportPaths.Add((New-UscHtmlReport -Run $run -OutputDirectory $config.ReportDirectory))
+    }
 
-Write-UscLog -Level Audit -Message 'Run finished' -Data @{ Mode = $mode; TotalBytesFreed = $run.TotalBytesFreed; Reports = @($reportPaths); LogFile = $logFile }
+    Write-UscLog -Level Audit -Message 'Run finished' -Data @{ Mode = $mode; TotalBytesFreed = $run.TotalBytesFreed; Reports = @($reportPaths); LogFile = $logFile }
 
-# Console summary display for non-menu cli invocations
-if ($PSCmdlet.ParameterSetName -ne 'Menu') {
     Write-Host '==================================================' -ForegroundColor Cyan
     Write-Host '          ULTIMATE SYSTEM CLEANER SUMMARY         ' -ForegroundColor White -BackgroundColor Blue
     Write-Host '==================================================' -ForegroundColor Cyan
@@ -563,15 +626,15 @@ if ($PSCmdlet.ParameterSetName -ne 'Menu') {
     Write-Host ' Reports Generated:'
     $reportPaths | ForEach-Object { Write-Host "  - $_" -ForegroundColor Yellow }
     Write-Host '==================================================' -ForegroundColor Cyan
-}
 
-[pscustomobject]@{
-    RunId = $runId
-    Mode = $mode
-    WhatIfOnly = $dryRun
-    TotalBytesFreed = $run.TotalBytesFreed
-    LogFile = $logFile
-    Reports = @($reportPaths)
-    Results = @($results)
+    [pscustomobject]@{
+        RunId = $runId
+        Mode = $mode
+        WhatIfOnly = $dryRun
+        TotalBytesFreed = $run.TotalBytesFreed
+        LogFile = $logFile
+        Reports = @($reportPaths)
+        Results = @($results)
+    }
 }
 
