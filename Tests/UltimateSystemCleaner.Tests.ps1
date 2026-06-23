@@ -23,7 +23,7 @@ Describe 'UltimateSystemCleaner configuration' {
 
     It 'loads the default configuration' {
         $config = Get-UscDefaultConfig
-        $config.Version | Should Be '0.1'
+        $config.Version | Should Be '0.2'
         $config.ConfirmNuclearActions | Should Be $true
     }
 

@@ -300,7 +300,7 @@ function Show-UscMenu {
     while ($true) {
         Clear-Host
         Write-Host '==================================================' -ForegroundColor Cyan
-        Write-Host '          ULTIMATE SYSTEM CLEANER v0.1            ' -ForegroundColor White -BackgroundColor Blue
+        Write-Host '          ULTIMATE SYSTEM CLEANER v0.2            ' -ForegroundColor White -BackgroundColor Blue
         Write-Host '==================================================' -ForegroundColor Cyan
         Write-Host " Privilege Context : $adminStatus" -ForegroundColor Yellow
         Write-Host " Signature Audit   : $sigStatus" -ForegroundColor $sigColor
@@ -326,10 +326,10 @@ function Show-UscMenu {
         
         $selection = Read-Host 'Selection'
         switch ($selection) {
-            '1' { return @{ Mode = 'Analyze' } }
-            '2' { return @{ Mode = 'DeepSpace' } }
-            '3' { return @{ Mode = 'Safe' } }
-            '4' { return @{ Mode = 'Aggressive' } }
+            '1' { return @{ Mode = 'Analyze'; ConfirmNuclear = $false } }
+            '2' { return @{ Mode = 'DeepSpace'; ConfirmNuclear = $false } }
+            '3' { return @{ Mode = 'Safe'; ConfirmNuclear = $false } }
+            '4' { return @{ Mode = 'Aggressive'; ConfirmNuclear = $false } }
             '5' { 
                 $confirm = Read-Host 'Nuclear actions can permanently remove rollback state. Are you sure? (y/N)'
                 if ($confirm -eq 'y') {
@@ -337,11 +337,11 @@ function Show-UscMenu {
                 }
                 break
             }
-            '6' { return @{ Mode = 'ComponentStore' } }
+            '6' { return @{ Mode = 'ComponentStore'; ConfirmNuclear = $false } }
             '7' { Show-UscConfigEditor -Config $Config }
             '8' { Show-UscSigningHelper }
             '9' { Show-UscScheduleHelper }
-            '0' { return @{ Mode = 'Exit' } }
+            '0' { return @{ Mode = 'Exit'; ConfirmNuclear = $false } }
             default { Write-Host 'Invalid choice, try again.'; Start-Sleep -Seconds 1 }
         }
     }
@@ -472,7 +472,10 @@ $confirmedNuke = $ConfirmNuclear
 if ($PSCmdlet.ParameterSetName -eq 'Menu') {
     $choice = Show-UscMenu -Config $config
     $mode = $choice.Mode
-    $confirmedNuke = [bool]$choice.ConfirmNuclear
+    $confirmedNuke = $false
+    if ($choice.ContainsKey('ConfirmNuclear')) {
+        $confirmedNuke = [bool]$choice.ConfirmNuclear
+    }
 }
 elseif ($Safe) { $mode = 'Safe' }
 elseif ($Aggressive) { $mode = 'Aggressive' }

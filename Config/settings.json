@@ -1,5 +1,5 @@
 {
-  "Version": "0.1",
+  "Version": "0.2",
   "LogDirectory": "%ProgramData%\\UltimateSystemCleaner\\Logs",
   "ReportDirectory": "%ProgramData%\\UltimateSystemCleaner\\Reports",
   "MaxRunspaces": 4,

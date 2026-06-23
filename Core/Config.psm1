@@ -3,8 +3,7 @@ Set-StrictMode -Version Latest
 function Get-UscDefaultConfig {
     [CmdletBinding()]
     param()
-    [pscustomobject]@{
-        Version = '0.1'
+    $config = [pscustomobject]@{
         LogDirectory = Join-Path $env:ProgramData 'UltimateSystemCleaner\Logs'
         ReportDirectory = Join-Path $env:ProgramData 'UltimateSystemCleaner\Reports'
         MaxRunspaces = [Math]::Max(2, [Environment]::ProcessorCount)
@@ -36,6 +35,8 @@ function Get-UscDefaultConfig {
             PurgeUpdateRollback = $false
         }
     }
+    $config | Add-Member -MemberType NoteProperty -Name 'Version' -Value '0.2' -Force
+    return $config
 }
 
 function Read-UscConfig {
