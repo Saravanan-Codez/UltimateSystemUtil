@@ -560,6 +560,9 @@ if ($PSCmdlet.ParameterSetName -eq 'Menu') {
         Write-Host ' Reports Generated:'
         $reportPaths | ForEach-Object {
             $reportUri = ([uri]$_).AbsoluteUri
+            if ($reportUri -like '*.html') {
+                Write-Host '  (click this  holding control)' -ForegroundColor Gray
+            }
             Write-Host "  - $reportUri" -ForegroundColor Yellow
         }
         Write-Host '==================================================' -ForegroundColor Cyan
@@ -633,6 +636,9 @@ else {
     Write-Host ' Reports Generated:'
     $reportPaths | ForEach-Object {
         $reportUri = ([uri]$_).AbsoluteUri
+        if ($reportUri -like '*.html') {
+            Write-Host '  (click this  holding control)' -ForegroundColor Gray
+        }
         Write-Host "  - $reportUri" -ForegroundColor Yellow
     }
     Write-Host '==================================================' -ForegroundColor Cyan
