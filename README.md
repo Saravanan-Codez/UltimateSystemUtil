@@ -1,18 +1,20 @@
-# Falkon System Utilities (FalkonSysUtils)
+# Falkon System Utilities (FalkonSysUtils) - The Holy Grail Update
 
-A modular, production-grade PowerShell utility suite for Windows optimization, cleanup, and maintenance.
+A profound, production-grade PowerShell utility suite for extreme Windows optimization, debloat, and maintenance. Tailored for both high-performance gaming and stable enterprise environments.
 
-## Structure
-- [FalkonSysUtils.ps1](file:///d:/Falkon_labs/UltimateSystemUtil/FalkonSysUtils.ps1): The root entry orchestrator displaying the main multi-tool utility menu.
-- [SystemCleaner/](file:///d:/Falkon_labs/UltimateSystemUtil/SystemCleaner/): The system cleanup utility with Safe, Aggressive, and Nuclear modes.
-- *Upcoming Utilities*: Registry Optimizer, Network Optimizer, and telemetry managers will be placed in dedicated subdirectories.
+## Feature Modules
+
+- **Falkon System Cleaner**: Advanced disk space recovery featuring Safe, Aggressive, and Nuclear modes (with Windows Update cache and Component Store resetbase capabilities).
+- **Falkon System Optimizer (Tweaker)**: Automatically nukes telemetry, removes stubborn bloatware (Candy Crush, Xbox overlays, etc.), and disables heavy services (Superfetch/SysMain on SSDs) based on your selected profile (Maximum Performance vs. Maximum Stability).
+- **Falkon Network Optimizer**: Modifies the TCP/IP stack to lower network latency (disables Nagle's Algorithm via TCPNoDelay), resets Winsock, and halts bandwidth-hogging Delivery Optimization (P2P Windows Updates).
+- **Falkon Registry Optimizer**: Restores the classic Windows 10 context menu (bypassing the slow 'Show more options' delay) and injects `Win32PrioritySeparation` tweaks to prioritize foreground task processing.
 
 ---
 
 ## Quick Start
 
 ### Web Installer (Direct In-Memory Load)
-Run the following in an elevated PowerShell session to download, extract, and start the interactive suite in one command:
+Run the following in an elevated PowerShell session to download, extract, and start the dynamic interactive dashboard:
 ```powershell
 irm https://raw.githubusercontent.com/Saravanan-Codez/FalkonSysUtils/main/FalkonSysUtils.ps1 | iex
 ```
@@ -26,20 +28,9 @@ Clone or extract the ZIP locally and invoke the root orchestrator:
 # Direct CLI pass-through to System Cleaner
 .\FalkonSysUtils.ps1 -Analyze
 .\FalkonSysUtils.ps1 -Safe -GenerateReport
-.\FalkonSysUtils.ps1 -Aggressive -WhatIfOnly
 ```
 
 ---
 
-## Falkon System Cleaner Features
-
-The default configuration sets `DryRunDefault` to `true`, meaning cleanup operations are safely simulated unless disabled in configurations or explicitly run.
-
-### Nuclear Mode Safeguards
-Nuclear mode deletes volume shadow copies, removes restore points, and runs `DISM /ResetBase`. Because these operations permanently remove rollback paths, they are dual-gated:
-1. Change `"ConfirmNuclearActions"` to `true` in `SystemCleaner/Config/settings.json`.
-2. Launch the execution with `-Nuclear -ConfirmNuclear` switches or confirm the prompt interactively.
-
-### Reports & Logs
-- **HTML/JSON/CSV Reports**: Written to `%ProgramData%\UltimateSystemCleaner\Reports`
-- **JSON-Lines Audit Logs**: Written to `%ProgramData%\UltimateSystemCleaner\Logs`
+## Dynamic Dashboard
+The main orchestrator (`FalkonSysUtils.ps1`) automatically queries WMI/CIM objects on boot to display your current OS System, Processor model, and installed RAM capacity in real-time above the module selection menu.

@@ -118,14 +118,22 @@ if ($argsBound -and -not $Menu) {
 $adminStatus = 'Standard User (Some functions restricted)'
 if (Test-UscAdministratorPrivilege) { $adminStatus = 'Elevated (Admin)' }
 
+$osInfo = (Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue).Caption
+$cpuInfo = (Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue | Select-Object -First 1).Name
+$ramInfo = [math]::Round((Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue).TotalPhysicalMemory / 1GB, 1)
+
 while ($true) {
     Clear-Host
     Show-UscLogo
     Write-Host " Privilege Context : $adminStatus" -ForegroundColor Yellow
+    Write-Host " OS System         : $osInfo" -ForegroundColor Gray
+    Write-Host " Processor         : $cpuInfo" -ForegroundColor Gray
+    Write-Host " Installed RAM     : $ramInfo GB" -ForegroundColor Gray
     Write-Host '--------------------------------------------------' -ForegroundColor Cyan
     Write-Host '[1] Run Falkon System Cleaner' -ForegroundColor Green
-    Write-Host '[2] Registry Optimizer (Coming Soon)' -ForegroundColor Gray
-    Write-Host '[3] Network Optimizer (Coming Soon)' -ForegroundColor Gray
+    Write-Host '[2] Falkon Registry Optimizer' -ForegroundColor Magenta
+    Write-Host '[3] Falkon Network Optimizer' -ForegroundColor Blue
+    Write-Host '[4] Falkon System Optimizer (Tweaker)' -ForegroundColor Yellow
     Write-Host '[0] Exit' -ForegroundColor White
     Write-Host '==================================================' -ForegroundColor Cyan
     
@@ -133,22 +141,23 @@ while ($true) {
     switch ($selection) {
         '1' {
             $cleanerPath = Join-Path $PSScriptRoot 'SystemCleaner\UltimateSystemCleaner.ps1'
-            if (Test-Path -LiteralPath $cleanerPath) {
-                # Run the System Cleaner in Menu mode
-                & $cleanerPath -Menu
-            }
-            else {
-                Write-Host "System Cleaner module is missing at: $cleanerPath" -ForegroundColor Red
-                Start-Sleep -Seconds 2
-            }
+            if (Test-Path -LiteralPath $cleanerPath) { & $cleanerPath -Menu }
+            else { Write-Host "Module missing: $cleanerPath" -ForegroundColor Red; Start-Sleep -Seconds 2 }
         }
         '2' {
-            Write-Host 'Registry Optimizer is under development. Coming soon!' -ForegroundColor Yellow
-            Start-Sleep -Seconds 2
+            $regPath = Join-Path $PSScriptRoot 'RegistryOptimizer\RegistryOptimizer.ps1'
+            if (Test-Path -LiteralPath $regPath) { & $regPath -Menu }
+            else { Write-Host "Module missing: $regPath" -ForegroundColor Red; Start-Sleep -Seconds 2 }
         }
         '3' {
-            Write-Host 'Network Optimizer is under development. Coming soon!' -ForegroundColor Yellow
-            Start-Sleep -Seconds 2
+            $netPath = Join-Path $PSScriptRoot 'NetworkOptimizer\NetworkOptimizer.ps1'
+            if (Test-Path -LiteralPath $netPath) { & $netPath -Menu }
+            else { Write-Host "Module missing: $netPath" -ForegroundColor Red; Start-Sleep -Seconds 2 }
+        }
+        '4' {
+            $optPath = Join-Path $PSScriptRoot 'SystemOptimizer\SystemOptimizer.ps1'
+            if (Test-Path -LiteralPath $optPath) { & $optPath -Menu }
+            else { Write-Host "Module missing: $optPath" -ForegroundColor Red; Start-Sleep -Seconds 2 }
         }
         '0' {
             Write-Host 'Goodbye!' -ForegroundColor Cyan
