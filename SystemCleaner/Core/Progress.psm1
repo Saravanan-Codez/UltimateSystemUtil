@@ -119,7 +119,7 @@ function Update-UscConsoleProgress {
     $remainingBlocks = $progressBarWidth - $completedBlocks
     $bar = ('#' * $completedBlocks) + ('.' * $remainingBlocks)
     
-    $cleanMessage = "$Activity: $Status"
+    $cleanMessage = '{0}: {1}' -f $Activity, $Status
     if ($cleanMessage.Length -gt 50) {
         $cleanMessage = $cleanMessage.Substring(0, 47) + '...'
     }

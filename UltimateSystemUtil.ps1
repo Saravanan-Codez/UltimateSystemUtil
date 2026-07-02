@@ -87,13 +87,13 @@ function Test-UscAdministratorPrivilege {
 }
 
 function Show-UscLogo {
-    Write-Host '      .---.  ' -ForegroundColor Yellow
-    Write-Host '     /     \ ' -ForegroundColor Yellow
-    Write-Host '     \_.._  |   ___  _   _     _  __  ___   _   _' -ForegroundColor Yellow
-    Write-Host '     //   | |  | __|/ \ | |   | |/ / /   \ | \ | |' -ForegroundColor Cyan
-    Write-Host '    //    | |  | _|/ _ \| |__ |   <  | () | |  \| |' -ForegroundColor Cyan
-    Write-Host '   //_____/ |  |_|/_/ \_\____||_|\_\ \___/ |_|\___|' -ForegroundColor Cyan
-    Write-Host '  ((________/' -ForegroundColor Yellow
+    Write-Host '                 ___' -ForegroundColor Magenta
+    Write-Host '     \          /   \       ___  _   _     _  __  ___   _   _' -ForegroundColor Magenta
+    Write-Host '  ====\        /     \     | __|/ \ | |   | |/ / /   \ | \ | |' -ForegroundColor Magenta
+    Write-Host ' ======\______/   _   \    | _|/ _ \| |__ |   <  | () | |  \| |' -ForegroundColor DarkMagenta
+    Write-Host ' =======_        //\   >   |_|/_/ \_\____||_|\_\ \___/ |_|\___|' -ForegroundColor DarkMagenta
+    Write-Host '  ======/       //  \_/    F A L K O N   S Y S T E M   U T I L' -ForegroundColor Cyan
+    Write-Host '    ===/_______//' -ForegroundColor Cyan
     Write-Host '==================================================' -ForegroundColor Cyan
 }
 
