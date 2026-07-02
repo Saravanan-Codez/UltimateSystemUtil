@@ -86,6 +86,17 @@ function Test-UscAdministratorPrivilege {
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
+function Show-UscLogo {
+    Write-Host '      .---.  ' -ForegroundColor Yellow
+    Write-Host '     /     \ ' -ForegroundColor Yellow
+    Write-Host '     \_.._  |   ___  _   _     _  __  ___   _   _' -ForegroundColor Yellow
+    Write-Host '     //   | |  | __|/ \ | |   | |/ / /   \ | \ | |' -ForegroundColor Cyan
+    Write-Host '    //    | |  | _|/ _ \| |__ |   <  | () | |  \| |' -ForegroundColor Cyan
+    Write-Host '   //_____/ |  |_|/_/ \_\____||_|\_\ \___/ |_|\___|' -ForegroundColor Cyan
+    Write-Host '  ((________/' -ForegroundColor Yellow
+    Write-Host '==================================================' -ForegroundColor Cyan
+}
+
 # Check if arguments are provided. If so, forward directly to System Cleaner CLI mode.
 $argsBound = $PSBoundParameters.Count -gt 0
 if ($argsBound -and -not $Menu) {
@@ -109,9 +120,7 @@ if (Test-UscAdministratorPrivilege) { $adminStatus = 'Elevated (Admin)' }
 
 while ($true) {
     Clear-Host
-    Write-Host '==================================================' -ForegroundColor Cyan
-    Write-Host '          ULTIMATE SYSTEM UTILITY v0.2            ' -ForegroundColor White -BackgroundColor Blue
-    Write-Host '==================================================' -ForegroundColor Cyan
+    Show-UscLogo
     Write-Host " Privilege Context : $adminStatus" -ForegroundColor Yellow
     Write-Host '--------------------------------------------------' -ForegroundColor Cyan
     Write-Host '[1] Run Ultimate System Cleaner' -ForegroundColor Green

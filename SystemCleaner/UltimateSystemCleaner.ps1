@@ -291,6 +291,17 @@ function New-UscRunRecord {
     }
 }
 
+function Show-UscLogo {
+    Write-Host '      .---.  ' -ForegroundColor Yellow
+    Write-Host '     /     \ ' -ForegroundColor Yellow
+    Write-Host '     \_.._  |   ___  _   _     _  __  ___   _   _' -ForegroundColor Yellow
+    Write-Host '     //   | |  | __|/ \ | |   | |/ / /   \ | \ | |' -ForegroundColor Cyan
+    Write-Host '    //    | |  | _|/ _ \| |__ |   <  | () | |  \| |' -ForegroundColor Cyan
+    Write-Host '   //_____/ |  |_|/_/ \_\____||_|\_\ \___/ |_|\___|' -ForegroundColor Cyan
+    Write-Host '  ((________/' -ForegroundColor Yellow
+    Write-Host '==================================================' -ForegroundColor Cyan
+}
+
 function Show-UscMenu {
     [CmdletBinding()]
     param([psobject]$Config)
@@ -298,53 +309,32 @@ function Show-UscMenu {
     $adminStatus = 'Standard User (Some functions restricted)'
     if (Test-UscAdministrator) { $adminStatus = 'Elevated (Admin)' }
 
-    $sigStatus = "$unsignedCount Unsigned Modules Found"
-    $sigColor = 'Yellow'
-    if ($unsignedCount -eq 0) {
-        $sigStatus = 'All Modules Validly Signed'
-        $sigColor = 'Green'
-    }
-
     while ($true) {
         Clear-Host
-        Write-Host '==================================================' -ForegroundColor Cyan
-        Write-Host '          ULTIMATE SYSTEM CLEANER v0.2            ' -ForegroundColor White -BackgroundColor Blue
-        Write-Host '==================================================' -ForegroundColor Cyan
+        Show-UscLogo
         Write-Host " Privilege Context : $adminStatus" -ForegroundColor Yellow
-        Write-Host " Signature Audit   : $sigStatus" -ForegroundColor $sigColor
-        
-        $drive = Get-UscDriveSnapshot | Select-Object -First 1
-        if ($drive) {
-            $freeFormatted = Format-UscBytes -Bytes $drive.FreeSpace
-            $sizeFormatted = Format-UscBytes -Bytes $drive.Size
-            Write-Host " Drive $($drive.Drive) Storage     : $freeFormatted free of $sizeFormatted ($($drive.PercentFree)% free)" -ForegroundColor Gray
-        }
         Write-Host '--------------------------------------------------' -ForegroundColor Cyan
-        Write-Host '[1] Analyze Disk Usage (Find Opportunities)' -ForegroundColor Green
-        Write-Host '[2] Deep Disk Space Analysis (Top Files & Folders)' -ForegroundColor Green
-        Write-Host '[3] Run Safe Cleanup (Temp, cache, recycle bin)' -ForegroundColor Yellow
-        Write-Host '[4] Run Aggressive Cleanup (Safe + WER + update cache)' -ForegroundColor Yellow
-        Write-Host '[5] Run Nuclear Cleanup (Aggressive + restore/resetbase)' -ForegroundColor Red
-        Write-Host '[6] Analyze SxS Component Store' -ForegroundColor Gray
-        Write-Host '[7] Configure Settings (settings.json)' -ForegroundColor Cyan
+        Write-Host '[1] Diagnose System Space (All Drives)' -ForegroundColor Green
+        Write-Host '[2] Run Safe Cleanup' -ForegroundColor Yellow
+        Write-Host '[3] Run Aggressive Cleanup' -ForegroundColor Yellow
+        Write-Host '[4] Run Nuclear Cleanup' -ForegroundColor Red
+        Write-Host '[5] Configure Settings' -ForegroundColor Cyan
         Write-Host '[0] Exit' -ForegroundColor White
         Write-Host '==================================================' -ForegroundColor Cyan
         
         $selection = Read-Host 'Selection'
         switch ($selection) {
-            '1' { return @{ Mode = 'Analyze'; ConfirmNuclear = $false } }
-            '2' { return @{ Mode = 'DeepSpace'; ConfirmNuclear = $false } }
-            '3' { return @{ Mode = 'Safe'; ConfirmNuclear = $false } }
-            '4' { return @{ Mode = 'Aggressive'; ConfirmNuclear = $false } }
-            '5' { 
+            '1' { return @{ Mode = 'Diagnose'; ConfirmNuclear = $false } }
+            '2' { return @{ Mode = 'Safe'; ConfirmNuclear = $false } }
+            '3' { return @{ Mode = 'Aggressive'; ConfirmNuclear = $false } }
+            '4' { 
                 $confirm = Read-Host 'Nuclear actions can permanently remove rollback state. Are you sure? (y/N)'
                 if ($confirm -eq 'y') {
                     return @{ Mode = 'Nuclear'; ConfirmNuclear = $true }
                 }
                 break
             }
-            '6' { return @{ Mode = 'ComponentStore'; ConfirmNuclear = $false } }
-            '7' { Show-UscConfigEditor -Config $Config }
+            '5' { Show-UscConfigEditor -Config $Config }
             '0' { return @{ Mode = 'Exit'; ConfirmNuclear = $false } }
             default { Write-Host 'Invalid choice, try again.'; Start-Sleep -Seconds 1 }
         }
@@ -356,14 +346,19 @@ function Show-UscConfigEditor {
 
     while ($true) {
         Clear-Host
-        Write-Host '==================================================' -ForegroundColor Cyan
+        Show-UscLogo
         Write-Host '             CONFIGURATION SETTINGS               ' -ForegroundColor White -BackgroundColor Blue
         Write-Host '==================================================' -ForegroundColor Cyan
         Write-Host "[1] Toggle DryRunDefault          : $($Config.DryRunDefault)"
+        Write-Host "    -> If enabled, runs actions in read-only analysis mode first." -ForegroundColor Gray
         Write-Host "[2] Toggle CreateRestorePoint     : $($Config.CreateRestorePoint)"
+        Write-Host "    -> Creates a system checkpoint before running cleanups." -ForegroundColor Gray
         Write-Host "[3] Toggle ConfirmNuclearActions  : $($Config.ConfirmNuclearActions)"
+        Write-Host "    -> Prompts for confirmation before running destructive steps." -ForegroundColor Gray
         Write-Host "[4] Toggle Storage Sense Support  : $($Config.EnableStorageSenseIntegration)"
+        Write-Host "    -> Integrates with native Windows disk cleanup automation." -ForegroundColor Gray
         Write-Host '[5] Show Config Exclusions'
+        Write-Host '    -> Lists directories and files that will be skipped.' -ForegroundColor Gray
         Write-Host '[6] Save Exclusions & Back to Menu'
         Write-Host '==================================================' -ForegroundColor Cyan
         $choice = Read-Host 'Selection'
@@ -495,6 +490,47 @@ if ($PSCmdlet.ParameterSetName -eq 'Menu') {
 
         try {
             switch ($mode) {
+                'Diagnose' {
+                    Clear-Host
+                    Show-UscLogo
+                    Write-Host '             SYSTEM SPACE DIAGNOSIS               ' -ForegroundColor White -BackgroundColor Blue
+                    Write-Host '==================================================' -ForegroundColor Cyan
+                    
+                    Write-Host '  Scanning system drives & folders...' -ForegroundColor Gray
+                    
+                    Start-UscProgress -Activity 'Diagnosing' -Status 'Scanning drives and estimating cache sizes...' -Id 1
+                    $drives = @(Get-UscDriveSnapshot)
+                    $estimate = Get-UscDiagnosisEstimate -Config $config
+                    Complete-UscProgress -Activity 'Diagnosing' -Id 1
+                    
+                    Write-Host ' DRIVE CAPACITY:' -ForegroundColor Green
+                    foreach ($d in $drives) {
+                        $freeFormatted = Format-UscBytes -Bytes $d.FreeSpace
+                        $sizeFormatted = Format-UscBytes -Bytes $d.Size
+                        $usedFormatted = Format-UscBytes -Bytes $d.UsedSpace
+                        Write-Host "  - Drive $($d.Drive) [$($d.VolumeName)] ($($d.FileSystem)):"
+                        Write-Host "    * Free Space: $freeFormatted ($($d.PercentFree)% free)" -ForegroundColor Green
+                        Write-Host "    * Used Space: $usedFormatted" -ForegroundColor Gray
+                        Write-Host "    * Total Size: $sizeFormatted" -ForegroundColor Gray
+                    }
+                    
+                    Write-Host '--------------------------------------------------' -ForegroundColor Cyan
+                    Write-Host ' CLEANUP ESTIMATES BY MODE:' -ForegroundColor Green
+                    Write-Host "  - [Safe Mode]      : $(Format-UscBytes -Bytes $estimate.Safe)" -ForegroundColor Yellow
+                    Write-Host "    * Temp Folders   : $(Format-UscBytes -Bytes $estimate.Breakdown.Temp)" -ForegroundColor Gray
+                    Write-Host "    * Recycle Bin    : $(Format-UscBytes -Bytes $estimate.Breakdown.RecycleBin)" -ForegroundColor Gray
+                    Write-Host "  - [Aggressive Mode]: $(Format-UscBytes -Bytes $estimate.Aggressive)" -ForegroundColor Yellow
+                    Write-Host "    * Browser Cache  : $(Format-UscBytes -Bytes $estimate.Breakdown.Browser)" -ForegroundColor Gray
+                    Write-Host "    * GPU Cache      : $(Format-UscBytes -Bytes $estimate.Breakdown.GpuShader)" -ForegroundColor Gray
+                    Write-Host "    * Windows Update : $(Format-UscBytes -Bytes $estimate.Breakdown.WindowsUpdate)" -ForegroundColor Gray
+                    Write-Host "    * WER Reports    : $(Format-UscBytes -Bytes $estimate.Breakdown.WER)" -ForegroundColor Gray
+                    Write-Host "  - [Nuclear Mode]   : $(Format-UscBytes -Bytes $estimate.Nuclear)" -ForegroundColor Red
+                    Write-Host "    * WinSxS Temp    : $(Format-UscBytes -Bytes $estimate.Breakdown.ComponentStore)" -ForegroundColor Gray
+                    Write-Host "    * Crash Dumps    : $(Format-UscBytes -Bytes $estimate.Breakdown.CrashDumps)" -ForegroundColor Gray
+                    Write-Host '==================================================' -ForegroundColor Cyan
+                    
+                    $results.Add((New-UscOperationResult -Name 'Diagnosis' -Category Analyze -Status Succeeded -Message "Scanned $($drives.Count) drives. Nuclear cleanable estimate: $(Format-UscBytes -Bytes $estimate.Nuclear)"))
+                }
                 'Analyze' { 
                     $results.AddRange(@(Invoke-UscAnalysis -Config $config)) 
                 }
@@ -536,7 +572,7 @@ if ($PSCmdlet.ParameterSetName -eq 'Menu') {
         $run = New-UscRunRecord -RunId $runId -Mode $mode -Results @($results) -Config $config -WhatIfOnly:$dryRun
         $reportPaths = [System.Collections.Generic.List[string]]::new()
 
-        if ($GenerateReport -or $mode -in 'Analyze','DeepSpace','ComponentStore','Safe','Aggressive','Nuclear') {
+        if ($GenerateReport -or $mode -in 'Diagnose','Analyze','DeepSpace','ComponentStore','Safe','Aggressive','Nuclear') {
             $reportPaths.Add((New-UscJsonReport -Run $run -OutputDirectory $config.ReportDirectory))
             $reportPaths.Add((New-UscCsvReport -Results @($results) -OutputDirectory $config.ReportDirectory -RunId $runId))
             $reportPaths.Add((New-UscHtmlReport -Run $run -OutputDirectory $config.ReportDirectory))
@@ -577,7 +613,7 @@ else {
     if ($Safe) { $mode = 'Safe' }
     elseif ($Aggressive) { $mode = 'Aggressive' }
     elseif ($Nuclear) { $mode = 'Nuclear' }
-    elseif ($Analyze) { $mode = 'Analyze' }
+    elseif ($Analyze) { $mode = 'Diagnose' }
     elseif ($ComponentStore) { $mode = 'ComponentStore' }
     elseif ($InstallScheduledTask) { $mode = 'InstallScheduledTask' }
     elseif ($RemoveScheduledTask) { $mode = 'RemoveScheduledTask' }
@@ -587,6 +623,31 @@ else {
 
     try {
         switch ($mode) {
+            'Diagnose' {
+                Start-UscProgress -Activity 'Diagnosing' -Status 'Scanning drives and estimating cache sizes...' -Id 1
+                $drives = @(Get-UscDriveSnapshot)
+                $estimate = Get-UscDiagnosisEstimate -Config $config
+                Complete-UscProgress -Activity 'Diagnosing' -Id 1
+                
+                Write-Host '==================================================' -ForegroundColor Cyan
+                Write-Host '             SYSTEM SPACE DIAGNOSIS               ' -ForegroundColor White -BackgroundColor Blue
+                Write-Host '==================================================' -ForegroundColor Cyan
+                Write-Host ' DRIVE CAPACITY:' -ForegroundColor Green
+                foreach ($d in $drives) {
+                    Write-Host "  - Drive $($d.Drive) [$($d.VolumeName)] ($($d.FileSystem)):"
+                    Write-Host "    * Free Space: $(Format-UscBytes -Bytes $d.FreeSpace) ($($d.PercentFree)% free)" -ForegroundColor Green
+                    Write-Host "    * Used Space: $(Format-UscBytes -Bytes $d.UsedSpace)" -ForegroundColor Gray
+                    Write-Host "    * Total Size: $(Format-UscBytes -Bytes $d.Size)" -ForegroundColor Gray
+                }
+                Write-Host '--------------------------------------------------' -ForegroundColor Cyan
+                Write-Host ' CLEANUP ESTIMATES BY MODE:' -ForegroundColor Green
+                Write-Host "  - [Safe Mode]      : $(Format-UscBytes -Bytes $estimate.Safe)" -ForegroundColor Yellow
+                Write-Host "  - [Aggressive Mode]: $(Format-UscBytes -Bytes $estimate.Aggressive)" -ForegroundColor Yellow
+                Write-Host "  - [Nuclear Mode]   : $(Format-UscBytes -Bytes $estimate.Nuclear)" -ForegroundColor Red
+                Write-Host '==================================================' -ForegroundColor Cyan
+
+                $results.Add((New-UscOperationResult -Name 'Diagnosis' -Category Analyze -Status Succeeded -Message "Scanned $($drives.Count) drives. Nuclear cleanable estimate: $(Format-UscBytes -Bytes $estimate.Nuclear)"))
+            }
             'Analyze' { 
                 $results.AddRange(@(Invoke-UscAnalysis -Config $config)) 
             }
@@ -613,7 +674,7 @@ else {
     $run = New-UscRunRecord -RunId $runId -Mode $mode -Results @($results) -Config $config -WhatIfOnly:$dryRun
     $reportPaths = [System.Collections.Generic.List[string]]::new()
 
-    if ($GenerateReport -or $mode -in 'Analyze','Safe','Aggressive','Nuclear') {
+    if ($GenerateReport -or $mode -in 'Diagnose','Analyze','Safe','Aggressive','Nuclear') {
         $reportPaths.Add((New-UscJsonReport -Run $run -OutputDirectory $config.ReportDirectory))
         $reportPaths.Add((New-UscCsvReport -Results @($results) -OutputDirectory $config.ReportDirectory -RunId $runId))
         $reportPaths.Add((New-UscHtmlReport -Run $run -OutputDirectory $config.ReportDirectory))

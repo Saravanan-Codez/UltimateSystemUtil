@@ -49,7 +49,11 @@ function Update-UscProgress {
         $displayStatus = "$Status$etaString"
     }
 
+    # Render standard progress bar
     Write-Progress -Id $Id -ParentId $ParentId -Activity $Activity -Status $displayStatus -PercentComplete $bounded
+
+    # Render our custom flapping falkon mascot
+    Update-UscConsoleProgress -Activity $Activity -Status $Status -PercentComplete $bounded
 }
 
 function Complete-UscProgress {
@@ -63,6 +67,11 @@ function Complete-UscProgress {
         $null = $script:ProgressTracker.Remove($Id)
     }
     Write-Progress -Id $Id -ParentId $ParentId -Activity $Activity -Completed
+
+    # Clear custom progress line from the console
+    if ([Environment]::UserInteractive) {
+        Write-Host ("`r" + (' ' * 110) + "`r") -NoNewline
+    }
 }
 
 function Format-UscBytes {
@@ -86,5 +95,42 @@ function Get-UscSpinner {
     return $frame
 }
 
-Export-ModuleMember -Function Start-UscProgress, Update-UscProgress, Complete-UscProgress, Format-UscBytes, Get-UscSpinner
+$script:FalkonFrameIndex = 0
+$script:FalkonFrames = @(
+    ' \_("v")_/ ',
+    ' -_("o")_- ',
+    ' /_("v")_\ ',
+    ' -_("o")_- '
+)
+
+function Update-UscConsoleProgress {
+    param(
+        [string]$Activity,
+        [string]$Status,
+        [int]$PercentComplete
+    )
+    if (-not [Environment]::UserInteractive) { return }
+
+    $frame = $script:FalkonFrames[$script:FalkonFrameIndex]
+    $script:FalkonFrameIndex = ($script:FalkonFrameIndex + 1) % $script:FalkonFrames.Count
+    
+    $progressBarWidth = 20
+    $completedBlocks = [Math]::Max(0, [Math]::Min($progressBarWidth, [int]($PercentComplete / (100 / $progressBarWidth))))
+    $remainingBlocks = $progressBarWidth - $completedBlocks
+    $bar = ('#' * $completedBlocks) + ('.' * $remainingBlocks)
+    
+    $cleanMessage = "$Activity: $Status"
+    if ($cleanMessage.Length -gt 50) {
+        $cleanMessage = $cleanMessage.Substring(0, 47) + '...'
+    }
+    
+    $line = "`r  $frame  [$bar] $PercentComplete% | $cleanMessage"
+    $padLength = 110 - $line.Length
+    if ($padLength -gt 0) {
+        $line += ' ' * $padLength
+    }
+    Write-Host $line -NoNewline -ForegroundColor Cyan
+}
+
+Export-ModuleMember -Function Start-UscProgress, Update-UscProgress, Complete-UscProgress, Format-UscBytes, Get-UscSpinner, Update-UscConsoleProgress
 

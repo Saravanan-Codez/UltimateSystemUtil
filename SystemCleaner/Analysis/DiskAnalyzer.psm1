@@ -2,12 +2,19 @@ Set-StrictMode -Version Latest
 
 function Get-UscDriveSnapshot {
     [CmdletBinding()]
-    param([string[]]$DriveLetter = @($env:SystemDrive.TrimEnd('\')))
+    param([string[]]$DriveLetter = @())
 
-    foreach ($drive in $DriveLetter) {
-        $normalized = $drive.TrimEnd(':')
-        $deviceId = ('{0}:' -f $normalized)
-        $volume = Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DeviceID='$deviceId'" -ErrorAction SilentlyContinue
+    $volumes = if ($DriveLetter -and $DriveLetter.Count -gt 0) {
+        foreach ($drive in $DriveLetter) {
+            $normalized = $drive.TrimEnd(':').TrimEnd('\')
+            $deviceId = ('{0}:' -f $normalized)
+            Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DeviceID='$deviceId'" -ErrorAction SilentlyContinue
+        }
+    } else {
+        Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction SilentlyContinue
+    }
+
+    foreach ($volume in $volumes) {
         if (-not $volume) { continue }
         [pscustomobject]@{
             Drive       = $volume.DeviceID
@@ -192,5 +199,118 @@ function Get-UscDeepSpaceAnalysis {
     }
 }
 
-Export-ModuleMember -Function Get-UscDriveSnapshot, Get-UscDirectorySize, Get-UscCleanupOpportunity, Get-UscDeepSpaceAnalysis
+function Get-UscDiagnosisEstimate {
+    [CmdletBinding()]
+    param([psobject]$Config)
+
+    $safePaths = @(
+        $env:TEMP,
+        (Join-Path $env:WINDIR 'Temp')
+    )
+    
+    $werPaths = @(
+        (Join-Path $env:ProgramData 'Microsoft\Windows\WER\ReportArchive'),
+        (Join-Path $env:ProgramData 'Microsoft\Windows\WER\ReportQueue'),
+        (Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\WER')
+    )
+    
+    $gpuPaths = @(
+        (Join-Path $env:LOCALAPPDATA 'Google\Chrome\User Data\Shader Cache'),
+        (Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\User Data\Shader Cache')
+    )
+    if ($env:LOCALAPPDATA) {
+        $gpuPaths += @(
+            (Join-Path $env:LOCALAPPDATA 'NVIDIA\GLCache'),
+            (Join-Path $env:LOCALAPPDATA 'NVIDIA\DXCache'),
+            (Join-Path $env:LOCALAPPDATA 'NVIDIACorp\PlayFiles')
+        ) | Where-Object { $_ }
+    }
+    
+    $updatePaths = @(
+        (Join-Path $env:WINDIR 'SoftwareDistribution\Download'),
+        (Join-Path $env:ProgramData 'Microsoft\Network\Downloader')
+    )
+    
+    $dumpPaths = @(
+        (Join-Path $env:WINDIR 'Minidump'),
+        (Join-Path $env:WINDIR 'MEMORY.DMP'),
+        (Join-Path $env:LOCALAPPDATA 'CrashDumps')
+    )
+    
+    $browserPaths = @()
+    if ($env:LOCALAPPDATA) {
+        $browserPaths += @(
+            (Join-Path $env:LOCALAPPDATA 'Google\Chrome\User Data\Default\Cache'),
+            (Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\User Data\Default\Cache')
+        )
+    }
+
+    $sumPath = {
+        param([string[]]$paths)
+        $total = 0L
+        foreach ($path in $paths) {
+            if (Test-Path -LiteralPath $path) {
+                $files = Get-ChildItem -LiteralPath $path -Force -Recurse -File -ErrorAction SilentlyContinue
+                foreach ($f in $files) {
+                    $total += $f.Length
+                }
+            }
+        }
+        return $total
+    }
+    
+    $tempSize = &$sumPath $safePaths
+    
+    $recycleBinSize = 0L
+    $drives = Get-UscDriveSnapshot
+    foreach ($d in $drives) {
+        $rbPath = Join-Path $d.Drive '$Recycle.Bin'
+        if (Test-Path -LiteralPath $rbPath) {
+            $files = Get-ChildItem -LiteralPath $rbPath -Force -Recurse -File -ErrorAction SilentlyContinue
+            foreach ($f in $files) {
+                $recycleBinSize += $f.Length
+            }
+        }
+    }
+    
+    $werSize = &$sumPath $werPaths
+    $gpuSize = &$sumPath $gpuPaths
+    $updateSize = &$sumPath $updatePaths
+    $browserSize = &$sumPath $browserPaths
+    $dumpSize = &$sumPath $dumpPaths
+    
+    $sxsSize = 0L
+    $sxsTempPath = Join-Path $env:WINDIR 'WinSxS\Temp'
+    if (Test-Path -LiteralPath $sxsTempPath) {
+        $files = Get-ChildItem -LiteralPath $sxsTempPath -Force -Recurse -File -ErrorAction SilentlyContinue
+        foreach ($f in $files) {
+            $sxsSize += $f.Length
+        }
+    }
+    if (Test-Path -LiteralPath (Join-Path $env:WINDIR 'WinSxS')) {
+        $sxsSize += 850MB
+    }
+
+    $safeTotal = $tempSize + $recycleBinSize
+    $aggressiveTotal = $safeTotal + $werSize + $gpuSize + $updateSize + $browserSize
+    $nuclearTotal = $aggressiveTotal + $dumpSize + $sxsSize
+    
+    return [pscustomobject]@{
+        Safe = $safeTotal
+        Aggressive = $aggressiveTotal
+        Nuclear = $nuclearTotal
+        Breakdown = @{
+            Temp = $tempSize
+            RecycleBin = $recycleBinSize
+            WER = $werSize
+            GpuShader = $gpuSize
+            WindowsUpdate = $updateSize
+            Browser = $browserSize
+            CrashDumps = $dumpSize
+            ComponentStore = $sxsSize
+        }
+    }
+}
+
+Export-ModuleMember -Function Get-UscDriveSnapshot, Get-UscDirectorySize, Get-UscCleanupOpportunity, Get-UscDeepSpaceAnalysis, Get-UscDiagnosisEstimate
 
