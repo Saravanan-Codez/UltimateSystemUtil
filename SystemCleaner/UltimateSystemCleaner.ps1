@@ -710,6 +710,8 @@ function Show-UscScheduleHelper {
         Write-Host "Task status: $($res.Status) - $($res.Message)" -ForegroundColor Green
         $null = Read-Host 'Press Enter to continue'
     }
+}
+
 function Invoke-UscPostCleanVerification {
     param(
         [psobject]$Config,
