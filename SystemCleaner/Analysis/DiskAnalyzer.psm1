@@ -1,4 +1,4 @@
-Set-StrictMode -Version Latest
+﻿Set-StrictMode -Version Latest
 
 function Get-UscDriveSnapshot {
     [CmdletBinding()]
@@ -50,7 +50,7 @@ function Get-UscDirectorySize {
             continue
         }
 
-        $size = 0L
+        $size = 0
         try {
             if ($child.PSIsContainer) {
                 # Recursively sum sizes while omitting sub-junctions
@@ -142,11 +142,11 @@ function Get-UscDeepSpaceAnalysis {
     
     $filesList = [System.Collections.Generic.List[object]]::new()
     $categorySizes = @{
-        Caches      = 0L
-        Logs        = 0L
-        Dumps       = 0L
-        Updates     = 0L
-        SystemOther = 0L
+        Caches      = 0
+        Logs        = 0
+        Dumps       = 0
+        Updates     = 0
+        SystemOther = 0
     }
 
     try {
@@ -172,7 +172,7 @@ function Get-UscDeepSpaceAnalysis {
         $scriptBlock = {
             param($dir)
             $subFiles = [System.Collections.Generic.List[object]]::new()
-            $subCats = @{ Caches = 0L; Logs = 0L; Dumps = 0L; Updates = 0L; SystemOther = 0L }
+            $subCats = @{ Caches = 0; Logs = 0; Dumps = 0; Updates = 0; SystemOther = 0 }
 
             $allItems = Get-ChildItem -LiteralPath $dir -Force -Recurse -File -ErrorAction SilentlyContinue
             foreach ($item in $allItems) {
@@ -294,7 +294,7 @@ function Get-UscDiagnosisEstimate {
 
     $scriptBlock = {
         param($target)
-        $total = 0L
+        $total = 0
         if ($target.IsRecycle) {
             $drives = Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction SilentlyContinue
             foreach ($d in $drives) {
@@ -316,7 +316,7 @@ function Get-UscDiagnosisEstimate {
                 }
             }
             if (Test-Path -LiteralPath (Join-Path $env:windir 'WinSxS')) {
-                $total += 891289600L # 850MB
+                $total += 891289600 # 850MB
             }
         }
         else {
@@ -351,14 +351,14 @@ function Get-UscDiagnosisEstimate {
         }
     }
 
-    $tempSize = if ($sizes.ContainsKey('Temp')) { $sizes['Temp'] } else { 0L }
-    $recycleBinSize = if ($sizes.ContainsKey('RecycleBin')) { $sizes['RecycleBin'] } else { 0L }
-    $werSize = if ($sizes.ContainsKey('WER')) { $sizes['WER'] } else { 0L }
-    $gpuSize = if ($sizes.ContainsKey('GpuShader')) { $sizes['GpuShader'] } else { 0L }
-    $updateSize = if ($sizes.ContainsKey('WindowsUpdate')) { $sizes['WindowsUpdate'] } else { 0L }
-    $browserSize = if ($sizes.ContainsKey('Browser')) { $sizes['Browser'] } else { 0L }
-    $dumpSize = if ($sizes.ContainsKey('CrashDumps')) { $sizes['CrashDumps'] } else { 0L }
-    $sxsSize = if ($sizes.ContainsKey('ComponentStore')) { $sizes['ComponentStore'] } else { 0L }
+    $tempSize = if ($sizes.ContainsKey('Temp')) { $sizes['Temp'] } else { 0 }
+    $recycleBinSize = if ($sizes.ContainsKey('RecycleBin')) { $sizes['RecycleBin'] } else { 0 }
+    $werSize = if ($sizes.ContainsKey('WER')) { $sizes['WER'] } else { 0 }
+    $gpuSize = if ($sizes.ContainsKey('GpuShader')) { $sizes['GpuShader'] } else { 0 }
+    $updateSize = if ($sizes.ContainsKey('WindowsUpdate')) { $sizes['WindowsUpdate'] } else { 0 }
+    $browserSize = if ($sizes.ContainsKey('Browser')) { $sizes['Browser'] } else { 0 }
+    $dumpSize = if ($sizes.ContainsKey('CrashDumps')) { $sizes['CrashDumps'] } else { 0 }
+    $sxsSize = if ($sizes.ContainsKey('ComponentStore')) { $sizes['ComponentStore'] } else { 0 }
 
     $safeTotal = $tempSize + $recycleBinSize
     $aggressiveTotal = $safeTotal + $werSize + $gpuSize + $updateSize + $browserSize

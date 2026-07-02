@@ -1,4 +1,4 @@
-<# 
+﻿<# 
 .SYNOPSIS
 Ultimate System Cleaner - Enterprise Grade Windows Maintenance Utility
 .DESCRIPTION
@@ -699,7 +699,7 @@ function Invoke-UscPostCleanVerification {
     Write-Host ""
     Write-Host "[*] Running post-cleanup verification check..." -ForegroundColor Yellow
     
-    $remainingBytes = 0L
+    $remainingBytes = 0
     
     # Measure remaining in Temp
     $targets = Get-UscTempTargets -Config $Config

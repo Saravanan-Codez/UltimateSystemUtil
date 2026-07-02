@@ -75,7 +75,7 @@ function Show-UscRunHistory {
     [CmdletBinding()]
     param()
 
-    $runs = Get-UscRunHistory
+    $runs = @(Get-UscRunHistory)
     if ($runs.Count -eq 0) {
         Write-Host "  No history runs found." -ForegroundColor DarkGray
         return
@@ -105,7 +105,7 @@ function Compare-UscLastTwoRuns {
     [CmdletBinding()]
     param()
 
-    $runs = Get-UscRunHistory -Count 2
+    $runs = @(Get-UscRunHistory -Count 2)
     if ($runs.Count -lt 2) {
         Write-Host "  Not enough history for comparison (need at least 2 runs)." -ForegroundColor Yellow
         return
@@ -158,7 +158,7 @@ function Export-UscHistoryTrend {
         [string]$OutputPath = (Join-Path (Get-UscHistoryDirectory) 'trend.csv')
     )
 
-    $runs = Get-UscRunHistory
+    $runs = @(Get-UscRunHistory)
     if ($runs.Count -eq 0) {
         Write-Host "  No history available to export trend." -ForegroundColor Yellow
         return $null

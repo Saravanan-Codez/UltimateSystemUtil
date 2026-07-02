@@ -1,10 +1,10 @@
-Set-StrictMode -Version Latest
+﻿Set-StrictMode -Version Latest
 
 function Get-UscRecycleBinSize {
     [CmdletBinding()]
     param()
 
-    $total = 0L
+    $total = 0
     $drives = Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction SilentlyContinue
     foreach ($d in $drives) {
         $rbPath = Join-Path $d.DeviceID '$Recycle.Bin'
@@ -118,7 +118,7 @@ function Invoke-UscFontCacheCleanup {
 
     $fontCachePath = Join-Path $env:WINDIR 'ServiceProfiles\LocalService\AppData\Local\FontCache'
     $datFile = Join-Path $env:LOCALAPPDATA 'GDIPFONTCACHEV1.dat'
-    $estimated = 0L
+    $estimated = 0
     if (Test-Path -LiteralPath $fontCachePath) {
         $estimated += Measure-UscObjectSum -InputObject @(Get-ChildItem -LiteralPath $fontCachePath -File -Force -ErrorAction SilentlyContinue) -Property Length
     }

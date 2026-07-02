@@ -1,4 +1,4 @@
-Set-StrictMode -Version Latest
+﻿Set-StrictMode -Version Latest
 
 $script:LogRoot = Join-Path $env:ProgramData 'UltimateSystemCleaner\Logs'
 $script:CurrentLogFile = $null
@@ -146,7 +146,7 @@ function Measure-UscObjectSum {
         [string]$Property = 'Length'
     )
 
-    $total = 0L
+    $total = 0
     foreach ($item in @($InputObject)) {
         if ($null -eq $item) { continue }
         $value = $null

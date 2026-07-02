@@ -278,14 +278,18 @@ Describe 'UltimateSystemCleaner Run History Manager' {
             Remove-Item -LiteralPath $script:HistoryTestDir -Recurse -Force -ErrorAction SilentlyContinue
         }
         New-Item -ItemType Directory -Path $script:HistoryTestDir -Force | Out-Null
+
+        # Override the history dir inside the module to isolate tests
+        $histModule = Get-Module 'HistoryManager'
+        if ($histModule) {
+            $sb = [scriptblock]::Create("`$script:HistoryDir = '$script:HistoryTestDir'")
+            & $histModule $sb
+        }
     }
     AfterAll {
         if (Test-Path -LiteralPath $script:HistoryTestDir) {
             Remove-Item -LiteralPath $script:HistoryTestDir -Recurse -Force -ErrorAction SilentlyContinue
         }
-        # Cleanup test runs from ProgramData if any
-        $histDir = Join-Path $env:ProgramData 'UltimateSystemCleaner\History'
-        Get-ChildItem -Path $histDir -Filter 'run-test-hist-*.json' -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
     }
 
     It 'saves a run record and the file appears in history directory' {
@@ -304,8 +308,7 @@ Describe 'UltimateSystemCleaner Run History Manager' {
         }
         Save-UscRunHistory -Run $run
 
-        $histDir = Join-Path $env:ProgramData 'UltimateSystemCleaner\History'
-        $savedFile = Join-Path $histDir "run-$runId.json"
+        $savedFile = Join-Path $script:HistoryTestDir "run-$runId.json"
         Test-Path -LiteralPath $savedFile | Should Be $true
     }
 
