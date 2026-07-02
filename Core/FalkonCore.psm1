@@ -3,13 +3,11 @@ function Show-FalkonLogo {
         [string]$SubTitle = ""
     )
     Clear-Host
-    Write-Host '                 ___' -ForegroundColor Magenta
-    Write-Host '     \          /   \       ___  _   _     _  __  ___   _   _' -ForegroundColor Magenta
-    Write-Host '  ====\        /     \     | __|/ \ | |   | |/ / /   \ | \ | |' -ForegroundColor Magenta
-    Write-Host ' ======\______/   _   \    | _|/ _ \| |__ |   <  | () | |  \| |' -ForegroundColor DarkMagenta
-    Write-Host ' =======_        //\   >   |_|/_/ \_\____||_|\_\ \___/ |_|\___|' -ForegroundColor DarkMagenta
-    Write-Host '  ======/       //  \_/    F A L K O N   S Y S   U T I L S' -ForegroundColor Cyan
-    Write-Host '    ===/_______//' -ForegroundColor Cyan
+    Write-Host '      ___  _   _     _  __  ___   _   _' -ForegroundColor Magenta
+    Write-Host '     | __|/ \ | |   | |/ / /   \ | \ | |' -ForegroundColor Magenta
+    Write-Host '     | _|/ _ \| |__ |   <  | () | |  \| |' -ForegroundColor DarkMagenta
+    Write-Host '     |_|/_/ \_\____||_|\_\ \___/ |_|\___|' -ForegroundColor DarkMagenta
+    Write-Host '          F A L K O N   S Y S   U T I L S' -ForegroundColor Cyan
     
     if (-not [string]::IsNullOrWhiteSpace($SubTitle)) {
         Write-Host '==================================================' -ForegroundColor Cyan
