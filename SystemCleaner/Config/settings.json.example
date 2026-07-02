@@ -1,12 +1,11 @@
 {
-  "Version": "0.2",
   "LogDirectory": "%ProgramData%\\UltimateSystemCleaner\\Logs",
   "ReportDirectory": "%ProgramData%\\UltimateSystemCleaner\\Reports",
   "MaxRunspaces": 4,
   "ConfirmNuclearActions": true,
   "CreateRestorePoint": true,
   "EnableStorageSenseIntegration": true,
-  "DryRunDefault": true,
+  "DryRunDefault": false,
   "Exclusions": [
     "%USERPROFILE%\\Downloads\\Keep",
     "%ProgramData%\\Package Cache"
@@ -32,5 +31,6 @@
     "DeleteShadowCopies": false,
     "RemoveRestorePoints": false,
     "PurgeUpdateRollback": false
-  }
+  },
+  "Version": "0.2"
 }

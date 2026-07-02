@@ -115,7 +115,20 @@ function Invoke-UscBrowserCacheCleanup {
     }
 
     if ($runningBrowsers.Count -gt 0 -and -not $WhatIfOnly) {
-        Write-UscLog -Level Warning -Message "Active browser processes detected: $($runningBrowsers -join ', '). Some cache files may be locked."
+        Write-UscLog -Level Warning -Message "Active browser processes detected: $($runningBrowsers -join ', ')."
+        if ($Host.UI -ne $null -and ($Host.Name -eq 'ConsoleHost' -or $Host.Name -eq 'Visual Studio Code Host')) {
+            Write-Host "[!] WARNING: Active browser processes detected ($($runningBrowsers -join ', '))." -ForegroundColor Yellow
+            $closePrompt = Read-Host "Would you like to close these browsers to ensure complete cache deletion? (y/N)"
+            if ($closePrompt -match '^[yY]') {
+                foreach ($proc in $runningBrowsers) {
+                    Write-Host "[*] Stopping $proc process..." -ForegroundColor Gray
+                    Stop-Process -Name $proc -Force -ErrorAction SilentlyContinue
+                }
+                Start-Sleep -Seconds 2
+            } else {
+                Write-Host "[*] Proceeding anyway. Note that locked files will be skipped." -ForegroundColor Gray
+            }
+        }
     }
 
     $targets = Get-UscBrowserCacheTargets

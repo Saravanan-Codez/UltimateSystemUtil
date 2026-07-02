@@ -118,8 +118,11 @@ function Invoke-UscTempCleanup {
             }
         }
 
-        $status = if ($failed -gt 0 -and $freed -gt 0) { 'PartiallySucceeded' } elseif ($failed -gt 0) { 'Failed' } else { 'Succeeded' }
-        $results.Add((New-UscOperationResult -Name $target.Name -Category Clean -Status $status -BytesBefore $before -BytesFreed $freed -Paths $pathsToClean -Message "$($items.Count) candidate items, $failed failures"))
+        $status = if ($WhatIfOnly) {
+            if ($failed -gt 0) { 'PartiallySucceeded' } else { 'Simulated' }
+        } elseif ($failed -gt 0 -and $freed -gt 0) { 'PartiallySucceeded' } elseif ($failed -gt 0) { 'Failed' } else { 'Succeeded' }
+        $msg = if ($WhatIfOnly) { "$($items.Count) items would be removed" } else { "$($items.Count) candidate items, $failed failures" }
+        $results.Add((New-UscOperationResult -Name $target.Name -Category Clean -Status $status -BytesBefore $before -BytesFreed $freed -Paths $pathsToClean -Message $msg))
     }
     return @($results)
 }

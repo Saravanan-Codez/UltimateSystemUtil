@@ -1,22 +1,49 @@
 Set-StrictMode -Version Latest
 
+function Get-UscRecycleBinSize {
+    [CmdletBinding()]
+    param()
+
+    $total = 0L
+    $drives = Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction SilentlyContinue
+    foreach ($d in $drives) {
+        $rbPath = Join-Path $d.DeviceID '$Recycle.Bin'
+        if (-not (Test-Path -LiteralPath $rbPath)) { continue }
+        $files = Get-ChildItem -LiteralPath $rbPath -Force -Recurse -File -ErrorAction SilentlyContinue
+        foreach ($f in $files) {
+            $total += [Int64]$f.Length
+        }
+    }
+    return $total
+}
+
 function Invoke-UscRecycleBinCleanup {
     [CmdletBinding(SupportsShouldProcess)]
     param([switch]$WhatIfOnly)
 
+    $estimated = Get-UscRecycleBinSize
+
     try {
         if ($WhatIfOnly) {
-            return New-UscOperationResult -Name 'Recycle Bin' -Category Clean -Status Skipped -Message 'Dry run: recycle bin would be cleared'
+            return New-UscOperationResult -Name 'Recycle Bin' -Category Clean -Status Simulated -BytesFreed $estimated -Message "Would clear $(Format-UscRecycleBytes -Bytes $estimated) from recycle bin"
         }
         if ($PSCmdlet.ShouldProcess('Recycle Bin', 'Clear recycle bin')) {
             Clear-RecycleBin -Force -ErrorAction Stop
-            return New-UscOperationResult -Name 'Recycle Bin' -Category Clean -Status Succeeded -Message 'Recycle bin cleared'
+            return New-UscOperationResult -Name 'Recycle Bin' -Category Clean -Status Succeeded -BytesFreed $estimated -Message 'Recycle bin cleared'
         }
     }
     catch {
         Write-UscLog -Level Warning -Message 'Recycle bin cleanup failed' -Exception $_.Exception
         return New-UscOperationResult -Name 'Recycle Bin' -Category Clean -Status Failed -Message $_.Exception.Message
     }
+}
+
+function Format-UscRecycleBytes {
+    param([Int64]$Bytes)
+    if ($Bytes -ge 1GB) { return '{0:N2} GB' -f ($Bytes / 1GB) }
+    if ($Bytes -ge 1MB) { return '{0:N2} MB' -f ($Bytes / 1MB) }
+    if ($Bytes -ge 1KB) { return '{0:N2} KB' -f ($Bytes / 1KB) }
+    return "$Bytes B"
 }
 
 function Invoke-UscWerCleanup {
@@ -56,7 +83,11 @@ function Invoke-UscWerCleanup {
             }
         }
 
-        $results.Add((New-UscOperationResult -Name 'Windows Error Reporting' -Category Clean -Status $(if ($failed) { 'PartiallySucceeded' } else { 'Succeeded' }) -BytesFreed $size -Paths @($path) -Message "$($items.Count) candidate items"))
+        $status = if ($WhatIfOnly) {
+            if ($failed -gt 0) { 'PartiallySucceeded' } else { 'Simulated' }
+        } elseif ($failed -gt 0 -and $size -gt 0) { 'PartiallySucceeded' } elseif ($failed -gt 0) { 'Failed' } else { 'Succeeded' }
+
+        $results.Add((New-UscOperationResult -Name 'Windows Error Reporting' -Category Clean -Status $status -BytesFreed $size -Paths @($path) -Message $(if ($WhatIfOnly) { "$($items.Count) items would be removed" } else { "$($items.Count) candidate items, $failed failures" })))
     }
     return @($results)
 }
@@ -66,7 +97,7 @@ function Invoke-UscDnsFlush {
     param([switch]$WhatIfOnly)
 
     if ($WhatIfOnly) {
-        return New-UscOperationResult -Name 'DNS Resolver Cache' -Category Clean -Status Skipped -Message 'Dry run: DNS cache resolver would be flushed'
+        return New-UscOperationResult -Name 'DNS Resolver Cache' -Category Clean -Status Simulated -Message 'Would flush DNS resolver cache'
     }
 
     try {
@@ -87,9 +118,16 @@ function Invoke-UscFontCacheCleanup {
 
     $fontCachePath = Join-Path $env:WINDIR 'ServiceProfiles\LocalService\AppData\Local\FontCache'
     $datFile = Join-Path $env:LOCALAPPDATA 'GDIPFONTCACHEV1.dat'
+    $estimated = 0L
+    if (Test-Path -LiteralPath $fontCachePath) {
+        $estimated += Measure-UscObjectSum -InputObject @(Get-ChildItem -LiteralPath $fontCachePath -File -Force -ErrorAction SilentlyContinue) -Property Length
+    }
+    if (Test-Path -LiteralPath $datFile) {
+        $estimated += (Get-Item -LiteralPath $datFile -ErrorAction SilentlyContinue).Length
+    }
 
     if ($WhatIfOnly) {
-        return New-UscOperationResult -Name 'Font Cache' -Category Clean -Status Skipped -Message 'Dry run: Font cache databases would be deleted'
+        return New-UscOperationResult -Name 'Font Cache' -Category Clean -Status Simulated -BytesFreed $estimated -Message 'Would stop FontCache service and delete cache files'
     }
 
     if (-not $PSCmdlet.ShouldProcess('System Font Cache', 'Stop service and delete cache files')) {
@@ -154,8 +192,10 @@ function Invoke-UscDeliveryOptimizationCleanup {
         return New-UscOperationResult -Name 'Delivery Optimization Cache' -Category Clean -Status Skipped -Message 'Path does not exist'
     }
 
+    $estimated = Measure-UscObjectSum -InputObject @(Get-ChildItem -LiteralPath $doPath -Force -Recurse -File -ErrorAction SilentlyContinue) -Property Length
+
     if ($WhatIfOnly) {
-        return New-UscOperationResult -Name 'Delivery Optimization Cache' -Category Clean -Status Skipped -Message 'Dry run: Delivery Optimization cache would be purged'
+        return New-UscOperationResult -Name 'Delivery Optimization Cache' -Category Clean -Status Simulated -BytesFreed $estimated -Message 'Would purge Delivery Optimization cache'
     }
 
     if ($PSCmdlet.ShouldProcess('Delivery Optimization Cache', 'Purge DO folder files')) {
@@ -194,5 +234,5 @@ function Invoke-UscDeliveryOptimizationCleanup {
     }
 }
 
-Export-ModuleMember -Function Invoke-UscRecycleBinCleanup, Invoke-UscWerCleanup, Invoke-UscDnsFlush, Invoke-UscFontCacheCleanup, Invoke-UscDeliveryOptimizationCleanup
+Export-ModuleMember -Function Get-UscRecycleBinSize, Invoke-UscRecycleBinCleanup, Invoke-UscWerCleanup, Invoke-UscDnsFlush, Invoke-UscFontCacheCleanup, Invoke-UscDeliveryOptimizationCleanup
 

@@ -114,7 +114,7 @@ function New-UscOperationResult {
     param(
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][ValidateSet('Analyze','Clean','Configure','Report','Checkpoint')][string]$Category,
-        [ValidateSet('Pending','Skipped','Succeeded','Failed','PartiallySucceeded')]
+        [ValidateSet('Pending','Skipped','Succeeded','Failed','PartiallySucceeded','Simulated')]
         [string]$Status = 'Pending',
         [Int64]$BytesBefore = 0,
         [Int64]$BytesAfter = 0,
@@ -160,5 +160,42 @@ function Measure-UscObjectSum {
     return $total
 }
 
-Export-ModuleMember -Function Initialize-UscLogger, Write-UscLog, Get-UscAuditTrail, New-UscOperationResult, Measure-UscObjectSum
+function Write-UscOperationConsole {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][psobject]$Result,
+        [switch]$WhatIfOnly
+    )
+
+    $icon = switch ($Result.Status) {
+        'Succeeded' { '[OK]' }
+        'PartiallySucceeded' { '[!!]' }
+        'Simulated' { '[~]' }
+        'Failed' { '[X]' }
+        'Skipped' { '[--]' }
+        default { '[..]' }
+    }
+
+    $sizePart = if ($Result.BytesFreed -gt 0) {
+        $b = [Int64]$Result.BytesFreed
+        if ($b -ge 1GB) { " {0:N2} GB" -f ($b / 1GB) }
+        elseif ($b -ge 1MB) { " {0:N2} MB" -f ($b / 1MB) }
+        elseif ($b -ge 1KB) { " {0:N2} KB" -f ($b / 1KB) }
+        else { " $b B" }
+    } else { '' }
+
+    $color = switch ($Result.Status) {
+        'Succeeded' { 'Green' }
+        'PartiallySucceeded' { 'Yellow' }
+        'Simulated' { 'Magenta' }
+        'Failed' { 'Red' }
+        'Skipped' { 'DarkGray' }
+        default { 'Gray' }
+    }
+
+    $suffix = if ($Result.Message) { " - $($Result.Message)" } else { '' }
+    Write-Host "  $icon $($Result.Name)$sizePart$suffix" -ForegroundColor $color
+}
+
+Export-ModuleMember -Function Initialize-UscLogger, Write-UscLog, Get-UscAuditTrail, New-UscOperationResult, Measure-UscObjectSum, Write-UscOperationConsole
 

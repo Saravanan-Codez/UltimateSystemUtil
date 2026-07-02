@@ -11,27 +11,26 @@ function New-UscJsonReport {
         New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
     }
 
-    $path = Join-Path $OutputDirectory "UltimateSystemCleaner-$($Run.RunId).json"
-    $Run | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $path -Encoding UTF8
-    return $path
-}
+    $fileName = "UltimateSystemCleaner-$($Run.RunId).json"
+    $outputPath = Join-Path $OutputDirectory $fileName
 
-function New-UscCsvReport {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)][object[]]$Results,
-        [Parameter(Mandatory)][string]$OutputDirectory,
-        [Parameter(Mandatory)][string]$RunId
-    )
-
-    if (-not (Test-Path -LiteralPath $OutputDirectory)) {
-        New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
+    $payload = [ordered]@{
+        RunId           = $Run.RunId
+        Mode            = $Run.Mode
+        Started         = $Run.Started
+        Finished        = $Run.Finished
+        ComputerName    = $Run.ComputerName
+        UserName        = $Run.UserName
+        IsAdministrator = $Run.IsAdministrator
+        WhatIfOnly      = $Run.WhatIfOnly
+        TotalBytesFreed = $Run.TotalBytesFreed
+        Before          = @($Run.Before)
+        After           = @($Run.After)
+        Results         = @($Run.Results)
     }
 
-    $path = Join-Path $OutputDirectory "UltimateSystemCleaner-$RunId.csv"
-    $Results | Select-Object Name, Category, Status, BytesBefore, BytesAfter, BytesFreed, Message, Timestamp |
-        Export-Csv -LiteralPath $path -NoTypeInformation -Encoding UTF8
-    return $path
+    $payload | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $outputPath -Encoding UTF8
+    return $outputPath
 }
 
-Export-ModuleMember -Function New-UscJsonReport, New-UscCsvReport
+Export-ModuleMember -Function New-UscJsonReport

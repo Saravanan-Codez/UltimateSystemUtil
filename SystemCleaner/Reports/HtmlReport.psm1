@@ -1,24 +1,48 @@
 Set-StrictMode -Version Latest
 
-if (-not (Get-Command Format-UscBytes -ErrorAction SilentlyContinue)) {
-    $progressPath = Join-Path (Split-Path $PSScriptRoot -Parent) "Core\Progress.psm1"
-    if (Test-Path $progressPath) {
-        Import-Module $progressPath -ErrorAction SilentlyContinue
+function New-UscCsvReport {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][object[]]$Results,
+        [Parameter(Mandatory)][string]$OutputDirectory,
+        [Parameter(Mandatory)][string]$RunId
+    )
+
+    if (-not (Test-Path -LiteralPath $OutputDirectory)) {
+        New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
     }
-}
-if (-not (Get-Command Format-UscBytes -ErrorAction SilentlyContinue)) {
-    function Format-UscBytes {
-        param([Int64]$Bytes)
-        if ($Bytes -ge 1GB) { return "{0:N2} GB" -f ($Bytes / 1GB) }
-        if ($Bytes -ge 1MB) { return "{0:N2} MB" -f ($Bytes / 1MB) }
-        if ($Bytes -ge 1KB) { return "{0:N2} KB" -f ($Bytes / 1KB) }
-        return "$Bytes Bytes"
+
+    $outputPath = Join-Path $OutputDirectory "UltimateSystemCleaner-$RunId.csv"
+    $rows = foreach ($result in @($Results)) {
+        [pscustomobject]@{
+            RunId       = $RunId
+            Name        = $result.Name
+            Category    = $result.Category
+            Status      = $result.Status
+            BytesBefore = $result.BytesBefore
+            BytesAfter  = $result.BytesAfter
+            BytesFreed  = $result.BytesFreed
+            Message     = $result.Message
+            Timestamp   = $result.Timestamp
+        }
     }
+
+    $rows | Export-Csv -LiteralPath $outputPath -NoTypeInformation -Encoding UTF8
+    return $outputPath
 }
 
-function ConvertTo-UscHtmlEncoded {
-    param([AllowNull()][object]$Value)
-    return [System.Net.WebUtility]::HtmlEncode([string]$Value)
+function Format-UscHtmlEncode {
+    param([string]$Text)
+    if ([string]::IsNullOrEmpty($Text)) { return '' }
+    return [System.Security.SecurityElement]::Escape($Text)
+}
+
+function Format-UscReportBytes {
+    param([Int64]$Bytes)
+    if ($Bytes -ge 1GB) { return '{0:N2} GB' -f ($Bytes / 1GB) }
+    if ($Bytes -ge 1MB) { return '{0:N2} MB' -f ($Bytes / 1MB) }
+    if ($Bytes -ge 1KB) { return '{0:N2} KB' -f ($Bytes / 1KB) }
+    return "$Bytes B"
 }
 
 function New-UscHtmlReport {
@@ -32,150 +56,101 @@ function New-UscHtmlReport {
         New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
     }
 
-    # 1. Load HTML Template
-    $templatePath = Join-Path $PSScriptRoot '..\Templates\report_template.html'
-    if (-not (Test-Path -LiteralPath $templatePath)) {
-        # Fallback if template is missing
-        Write-Warning "Report template not found at $templatePath. Generating minimal report."
-        return $null
-    }
-    
-    $htmlContent = Get-Content -LiteralPath $templatePath -Raw -ErrorAction Stop
+    $outputPath = Join-Path $OutputDirectory "UltimateSystemCleaner-$($Run.RunId).html"
+    $duration = if ($Run.Started -and $Run.Finished) {
+        ($Run.Finished - $Run.Started).ToString('mm\:ss')
+    } else { '—' }
 
-    # 2. Build Results Table Rows
-    $rows = foreach ($result in $Run.Results) {
-        $name = ConvertTo-UscHtmlEncoded -Value $result.Name
-        $cat = ConvertTo-UscHtmlEncoded -Value $result.Category
-        $status = ConvertTo-UscHtmlEncoded -Value $result.Status
-        $freedBytes = Format-UscBytes -Bytes ([Int64]$result.BytesFreed)
-        $msg = ConvertTo-UscHtmlEncoded -Value $result.Message
-        "<tr><td><strong>$name</strong></td><td>$cat</td><td><span class='status-badge status-$status'>$status</span></td><td>$freedBytes</td><td>$msg</td></tr>"
+    $dryRunBanner = if ($Run.WhatIfOnly) {
+        '<div class="banner dry-run">DRY RUN - no files were deleted. Toggle DryRunDefault in settings to run for real.</div>'
+    } else { '' }
+
+    $driveRows = ''
+    foreach ($before in @($Run.Before)) {
+        $after = @($Run.After) | Where-Object { $_.Drive -eq $before.Drive } | Select-Object -First 1
+        $afterFree = if ($after) { [Int64]$after.FreeSpace } else { [Int64]$before.FreeSpace }
+        $delta = $afterFree - [Int64]$before.FreeSpace
+        $deltaClass = if ($delta -gt 0) { 'good' } elseif ($delta -lt 0) { 'bad' } else { 'neutral' }
+        $deltaText = if ($delta -gt 0) { "+$(Format-UscReportBytes -Bytes $delta)" } elseif ($delta -lt 0) { Format-UscReportBytes -Bytes $delta } else { 'unchanged' }
+        $driveRows += @"
+<tr>
+  <td>$($before.Drive)</td>
+  <td>$(Format-UscReportBytes -Bytes $before.FreeSpace)</td>
+  <td>$(Format-UscReportBytes -Bytes $afterFree)</td>
+  <td class="$deltaClass">$deltaText</td>
+</tr>
+"@
     }
-    $resultsTable = $rows -join [Environment]::NewLine
-    # 3. Build Audit Logs Table Rows
-    $auditRows = foreach ($log in $Run.Audit) {
-        $timestamp = ConvertTo-UscHtmlEncoded -Value $log.Timestamp
-        $level = ConvertTo-UscHtmlEncoded -Value $log.Level
-        $msg = ConvertTo-UscHtmlEncoded -Value $log.Message
-        $errHtml = ''
-        if ($log.Error) {
-            $errHtml = "<br><small style='color:red;'>$([System.Net.WebUtility]::HtmlEncode($log.Error))</small>"
+
+    $opRows = ''
+    foreach ($op in @($Run.Results)) {
+        $statusClass = switch ($op.Status) {
+            'Succeeded' { 'good' }
+            'PartiallySucceeded' { 'warn' }
+            'Simulated' { 'sim' }
+            'Failed' { 'bad' }
+            default { 'neutral' }
         }
-        "<tr><td style='white-space: nowrap;'>$timestamp</td><td><span class='status-badge status-$level'>$level</span></td><td>$msg $errHtml</td></tr>"
-    }
-    $auditTable = $auditRows -join [Environment]::NewLine
-
-    # 4. Compile Category Statistics & Generate SVG Bar Chart
-    $categories = [ordered]@{
-        'Caches'          = 0L
-        'Logs'            = 0L
-        'Dumps'           = 0L
-        'Updates & Temp'  = 0L
+        $opRows += @"
+<tr>
+  <td>$(Format-UscHtmlEncode -Text $op.Name)</td>
+  <td class="$statusClass">$($op.Status)</td>
+  <td>$(Format-UscReportBytes -Bytes $op.BytesFreed)</td>
+  <td>$(Format-UscHtmlEncode -Text $op.Message)</td>
+</tr>
+"@
     }
 
-    foreach ($res in $Run.Results) {
-        $name = $res.Name
-        $freed = [Int64]$res.BytesFreed
-        if ($name -match '(?i)Cache|Browser|Font') {
-            $categories['Caches'] += $freed
-        }
-        elseif ($name -match '(?i)Log|Error|WER') {
-            $categories['Logs'] += $freed
-        }
-        elseif ($name -match '(?i)Dump|Crash') {
-            $categories['Dumps'] += $freed
-        }
-        else {
-            $categories['Updates & Temp'] += $freed
-        }
-    }
+    $totalLabel = if ($Run.WhatIfOnly) { 'Estimated Reclaimable' } else { 'Total Freed' }
 
-    # Generate SVGs
-    $svg = ''
-    $maxVal = 0L
-    foreach ($val in $categories.Values) {
-        if ($val -gt $maxVal) { $maxVal = $val }
-    }
+    $html = @"
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Ultimate System Cleaner - $($Run.RunId)</title>
+  <style>
+    body { font-family: Segoe UI, sans-serif; background: #0f1419; color: #e6edf3; margin: 0; padding: 24px; }
+    h1 { color: #58a6ff; margin-bottom: 4px; }
+    .meta { color: #8b949e; margin-bottom: 20px; }
+    .banner { padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; font-weight: 600; }
+    .dry-run { background: #3d2e00; color: #f0c14b; border: 1px solid #f0c14b; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #30363d; }
+    th { background: #161b22; color: #58a6ff; }
+    .good { color: #3fb950; }
+    .warn { color: #d29922; }
+    .bad { color: #f85149; }
+    .sim { color: #a371f7; }
+    .neutral { color: #8b949e; }
+    .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-bottom: 20px; }
+    .stat { font-size: 1.4em; color: #3fb950; }
+  </style>
+</head>
+<body>
+  <h1>Ultimate System Cleaner Report</h1>
+  <p class="meta">Run $($Run.RunId) · Mode: $($Run.Mode) · Duration: $duration · Admin: $($Run.IsAdministrator)</p>
+  $dryRunBanner
+  <div class="card">
+    <div>$totalLabel</div>
+    <div class="stat">$(Format-UscReportBytes -Bytes $Run.TotalBytesFreed)</div>
+  </div>
+  <h2>Disk Space</h2>
+  <table>
+    <tr><th>Drive</th><th>Before (free)</th><th>After (free)</th><th>Change</th></tr>
+    $driveRows
+  </table>
+  <h2>Operations</h2>
+  <table>
+    <tr><th>Task</th><th>Status</th><th>Size</th><th>Details</th></tr>
+    $opRows
+  </table>
+</body>
+</html>
+"@
 
-    if ($maxVal -eq 0L) {
-        $svg = '<svg width="240" height="200" viewBox="0 0 240 200">
-            <text x="120" y="100" fill="#9ca3af" text-anchor="middle" font-family="sans-serif" font-size="14">No space freed in this run</text>
-        </svg>'
-    }
-    else {
-        # Render a sleek vertical bar chart in SVG
-        $barWidth = 30
-        $gap = 20
-        $chartHeight = 150
-        $svgItems = [System.Collections.Generic.List[string]]::new()
-        
-        $i = 0
-        foreach ($entry in $categories.GetEnumerator()) {
-            $catName = $entry.Key
-            $val = $entry.Value
-            
-            # Calculate height scaled to 120 max
-            $scaledHeight = if ($maxVal -gt 0) { [Math]::Round(($val / $maxVal) * 110) } else { 0 }
-            if ($scaledHeight -lt 5 -and $val -gt 0) { $scaledHeight = 5 } # minimum height for visibility
-            
-            $x = 15 + ($i * ($barWidth + $gap))
-            $y = $chartHeight - $scaledHeight
-            
-            $formattedVal = Format-UscBytes -Bytes $val
-            
-            $svgItems.Add("
-                <g>
-                    <rect x='$x' y='$y' width='$barWidth' height='$scaledHeight' fill='#3b82f6' rx='4' opacity='0.85'></rect>
-                    <text x='$($x + $barWidth/2)' y='$($y - 8)' fill='#f3f4f6' text-anchor='middle' font-size='10' font-weight='bold'>$formattedVal</text>
-                    <text x='$($x + $barWidth/2)' y='170' fill='#9ca3af' text-anchor='middle' font-size='9'>$catName</text>
-                </g>
-            ")
-            $i++
-        }
-        $svg = '<svg width="240" height="200" viewBox="0 0 240 200" style="background:transparent;">' + ($svgItems -join '') + '</svg>'
-    }
-    # 5. Build System Metadata List
-    $osInfo = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction SilentlyContinue
-    $osName = 'Windows'
-    if ($osInfo) { $osName = $osInfo.Caption }
-    
-    $adminText = 'No'
-    if ($Run.IsAdministrator) { $adminText = 'Yes' }
-    
-    $specs = @(
-        @{ Label = 'OS Version'; Value = $osName },
-        @{ Label = 'Computer Name'; Value = $Run.ComputerName },
-        @{ Label = 'User Context'; Value = $Run.UserName },
-        @{ Label = 'Admin Rights'; Value = $adminText },
-        @{ Label = 'PSScriptRoot'; Value = $PSScriptRoot }
-    )
-
-    $specRows = foreach ($spec in $specs) {
-        '<li><strong>{0}</strong><span>{1}</span></li>' -f `
-            (ConvertTo-UscHtmlEncoded $spec.Label),
-            (ConvertTo-UscHtmlEncoded $spec.Value)
-    }
-    $systemSpecs = $specRows -join [Environment]::NewLine
-
-    # 6. Apply replacement tokens
-    $htmlContent = $htmlContent.Replace('{{RUN_ID}}', $Run.RunId)
-    $htmlContent = $htmlContent.Replace('{{RUN_MODE}}', $Run.Mode)
-    
-    $dryRunText = 'DISABLED'
-    if ($Run.WhatIfOnly) { $dryRunText = 'ENABLED' }
-
-    $htmlContent = $htmlContent.Replace('{{DRY_RUN}}', $dryRunText)
-    $htmlContent = $htmlContent.Replace('{{TOTAL_FREED}}', (Format-UscBytes -Bytes ([Int64]$Run.TotalBytesFreed)))
-    $htmlContent = $htmlContent.Replace('{{TIME_STAMP}}', (Get-Date).ToString('u'))
-    $htmlContent = $htmlContent.Replace('{{RESULTS_TABLE}}', $resultsTable)
-    $htmlContent = $htmlContent.Replace('{{AUDIT_LOG_ROWS}}', $auditTable)
-    $htmlContent = $htmlContent.Replace('{{CHART_SVG}}', $svg)
-    $htmlContent = $htmlContent.Replace('{{SYSTEM_SPECS}}', $systemSpecs)
-
-    $path = Join-Path $OutputDirectory "UltimateSystemCleaner-$($Run.RunId).html"
-    $htmlContent | Set-Content -LiteralPath $path -Encoding UTF8
-    return $path
+    $html | Set-Content -LiteralPath $outputPath -Encoding UTF8
+    return $outputPath
 }
 
-Export-ModuleMember -Function New-UscHtmlReport
-
+Export-ModuleMember -Function New-UscHtmlReport, New-UscCsvReport, Format-UscReportBytes

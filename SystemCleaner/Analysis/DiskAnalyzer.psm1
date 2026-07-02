@@ -138,7 +138,6 @@ function Get-UscDeepSpaceAnalysis {
     if (-not (Test-Path -LiteralPath $RootPath)) {
         return @()
     }
-
     Write-UscLog -Level Information -Message "Starting deep disk space scan of $RootPath"
     
     $filesList = [System.Collections.Generic.List[object]]::new()
@@ -151,38 +150,76 @@ function Get-UscDeepSpaceAnalysis {
     }
 
     try {
-        $allItems = Get-ChildItem -LiteralPath $RootPath -Force -Recurse -File -ErrorAction SilentlyContinue
-        foreach ($item in $allItems) {
-            if ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
-                continue
-            }
-
+        # 1. Scan root files in the main thread (very fast)
+        $rootFiles = Get-ChildItem -LiteralPath $RootPath -File -Force -ErrorAction SilentlyContinue
+        foreach ($item in $rootFiles) {
             $len = [Int64]$item.Length
-            $name = $item.Name
             $ext = $item.Extension.ToLowerInvariant()
             $fullName = $item.FullName
 
-            # Categorize size
-            if ($fullName -match '(?i)\\Cache\\|\\DXCache|\\GLCache|\\browser|\\thumbcache_') {
-                $categorySizes.Caches += $len
-            }
-            elseif ($ext -eq '.log' -or $fullName -match '(?i)\\Logs\\|\\WER\\') {
-                $categorySizes.Logs += $len
-            }
-            elseif ($ext -in '.dmp', '.mdmp', '.hdmp' -or $fullName -match '(?i)\\CrashDumps\\|\\Minidump') {
-                $categorySizes.Dumps += $len
-            }
-            elseif ($fullName -match '(?i)\\SoftwareDistribution\\|\\DeliveryOptimization') {
-                $categorySizes.Updates += $len
-            }
-            else {
-                $categorySizes.SystemOther += $len
-            }
+            if ($fullName -match '(?i)\\Cache\\|\\DXCache|\\GLCache|\\browser|\\thumbcache_') { $categorySizes.Caches += $len }
+            elseif ($ext -eq '.log' -or $fullName -match '(?i)\\Logs\\|\\WER\\') { $categorySizes.Logs += $len }
+            elseif ($ext -in '.dmp', '.mdmp', '.hdmp' -or $fullName -match '(?i)\\CrashDumps\\|\\Minidump') { $categorySizes.Dumps += $len }
+            elseif ($fullName -match '(?i)\\SoftwareDistribution\\|\\DeliveryOptimization') { $categorySizes.Updates += $len }
+            else { $categorySizes.SystemOther += $len }
 
-            $filesList.Add([pscustomobject]@{
-                Path = $fullName
-                Size = $len
-            })
+            $filesList.Add([pscustomobject]@{ Path = $fullName; Size = $len })
+        }
+
+        # 2. Get all top-level directories to scan in parallel
+        $subDirs = Get-ChildItem -LiteralPath $RootPath -Directory -Force -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+        
+        $scriptBlock = {
+            param($dir)
+            $subFiles = [System.Collections.Generic.List[object]]::new()
+            $subCats = @{ Caches = 0L; Logs = 0L; Dumps = 0L; Updates = 0L; SystemOther = 0L }
+
+            $allItems = Get-ChildItem -LiteralPath $dir -Force -Recurse -File -ErrorAction SilentlyContinue
+            foreach ($item in $allItems) {
+                if ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) { continue }
+                $len = [Int64]$item.Length
+                $ext = $item.Extension.ToLowerInvariant()
+                $fullName = $item.FullName
+
+                if ($fullName -match '(?i)\\Cache\\|\\DXCache|\\GLCache|\\browser|\\thumbcache_') { $subCats.Caches += $len }
+                elseif ($ext -eq '.log' -or $fullName -match '(?i)\\Logs\\|\\WER\\') { $subCats.Logs += $len }
+                elseif ($ext -in '.dmp', '.mdmp', '.hdmp' -or $fullName -match '(?i)\\CrashDumps\\|\\Minidump') { $subCats.Dumps += $len }
+                elseif ($fullName -match '(?i)\\SoftwareDistribution\\|\\DeliveryOptimization') { $subCats.Updates += $len }
+                else { $subCats.SystemOther += $len }
+
+                $subFiles.Add([pscustomobject]@{ Path = $fullName; Size = $len })
+            }
+            return [pscustomobject]@{ Files = $subFiles; Categories = $subCats }
+        }
+
+        $runspaceManagerPath = Join-Path (Split-Path $PSScriptRoot -Parent) "Core\RunspaceManager.psm1"
+        if (Test-Path $runspaceManagerPath) {
+            Import-Module $runspaceManagerPath -ErrorAction SilentlyContinue
+        }
+
+        if (Get-Command Invoke-UscParallel -ErrorAction SilentlyContinue) {
+            $scanResults = Invoke-UscParallel -InputObject $subDirs -ScriptBlock $scriptBlock -ThrottleLimit 8
+            foreach ($res in $scanResults) {
+                if ($res.Files) { $filesList.AddRange($res.Files) }
+                if ($res.Categories) {
+                    $categorySizes.Caches += $res.Categories.Caches
+                    $categorySizes.Logs += $res.Categories.Logs
+                    $categorySizes.Dumps += $res.Categories.Dumps
+                    $categorySizes.Updates += $res.Categories.Updates
+                    $categorySizes.SystemOther += $res.Categories.SystemOther
+                }
+            }
+        } else {
+            # Fallback to sequential scanning if parallel executor could not load
+            foreach ($dir in $subDirs) {
+                $res = & $scriptBlock -dir $dir
+                if ($res.Files) { $filesList.AddRange($res.Files) }
+                $categorySizes.Caches += $res.Categories.Caches
+                $categorySizes.Logs += $res.Categories.Logs
+                $categorySizes.Dumps += $res.Categories.Dumps
+                $categorySizes.Updates += $res.Categories.Updates
+                $categorySizes.SystemOther += $res.Categories.SystemOther
+            }
         }
     }
     catch {
@@ -244,52 +281,84 @@ function Get-UscDiagnosisEstimate {
             (Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\User Data\Default\Cache')
         )
     }
+    $scanTargets = @(
+        @{ Key = 'Temp'; Paths = $safePaths },
+        @{ Key = 'RecycleBin'; Paths = $null; IsRecycle = $true },
+        @{ Key = 'WER'; Paths = $werPaths },
+        @{ Key = 'GpuShader'; Paths = $gpuPaths },
+        @{ Key = 'WindowsUpdate'; Paths = $updatePaths },
+        @{ Key = 'Browser'; Paths = $browserPaths },
+        @{ Key = 'CrashDumps'; Paths = $dumpPaths },
+        @{ Key = 'ComponentStore'; Paths = @(Join-Path $env:WINDIR 'WinSxS\Temp'); IsSxS = $true }
+    )
 
-    $sumPath = {
-        param([string[]]$paths)
+    $scriptBlock = {
+        param($target)
         $total = 0L
-        foreach ($path in $paths) {
-            if (Test-Path -LiteralPath $path) {
-                $files = Get-ChildItem -LiteralPath $path -Force -Recurse -File -ErrorAction SilentlyContinue
-                foreach ($f in $files) {
-                    $total += $f.Length
+        if ($target.IsRecycle) {
+            $drives = Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction SilentlyContinue
+            foreach ($d in $drives) {
+                $rbPath = Join-Path $d.DeviceID '$Recycle.Bin'
+                if (Test-Path -LiteralPath $rbPath) {
+                    $files = Get-ChildItem -LiteralPath $rbPath -Force -Recurse -File -ErrorAction SilentlyContinue
+                    foreach ($f in $files) {
+                        $total += [Int64]$f.Length
+                    }
                 }
             }
         }
-        return $total
-    }
-    
-    $tempSize = &$sumPath $safePaths
-    
-    $recycleBinSize = 0L
-    $drives = Get-UscDriveSnapshot
-    foreach ($d in $drives) {
-        $rbPath = Join-Path $d.Drive '$Recycle.Bin'
-        if (Test-Path -LiteralPath $rbPath) {
-            $files = Get-ChildItem -LiteralPath $rbPath -Force -Recurse -File -ErrorAction SilentlyContinue
-            foreach ($f in $files) {
-                $recycleBinSize += $f.Length
+        elseif ($target.IsSxS) {
+            $sxsTempPath = $target.Paths[0]
+            if (Test-Path -LiteralPath $sxsTempPath) {
+                $files = Get-ChildItem -LiteralPath $sxsTempPath -Force -Recurse -File -ErrorAction SilentlyContinue
+                foreach ($f in $files) {
+                    $total += [Int64]$f.Length
+                }
+            }
+            if (Test-Path -LiteralPath (Join-Path $env:windir 'WinSxS')) {
+                $total += 891289600L # 850MB
             }
         }
+        else {
+            foreach ($path in $target.Paths) {
+                if (Test-Path -LiteralPath $path) {
+                    $files = Get-ChildItem -LiteralPath $path -Force -Recurse -File -ErrorAction SilentlyContinue
+                    foreach ($f in $files) {
+                        $total += [Int64]$f.Length
+                    }
+                }
+            }
+        }
+        return [pscustomobject]@{ Key = $target.Key; Size = $total }
     }
-    
-    $werSize = &$sumPath $werPaths
-    $gpuSize = &$sumPath $gpuPaths
-    $updateSize = &$sumPath $updatePaths
-    $browserSize = &$sumPath $browserPaths
-    $dumpSize = &$sumPath $dumpPaths
-    
-    $sxsSize = 0L
-    $sxsTempPath = Join-Path $env:WINDIR 'WinSxS\Temp'
-    if (Test-Path -LiteralPath $sxsTempPath) {
-        $files = Get-ChildItem -LiteralPath $sxsTempPath -Force -Recurse -File -ErrorAction SilentlyContinue
-        foreach ($f in $files) {
-            $sxsSize += $f.Length
+
+    $runspaceManagerPath = Join-Path (Split-Path $PSScriptRoot -Parent) "Core\RunspaceManager.psm1"
+    if (Test-Path $runspaceManagerPath) {
+        Import-Module $runspaceManagerPath -ErrorAction SilentlyContinue
+    }
+
+    $sizes = @{}
+    if (Get-Command Invoke-UscParallel -ErrorAction SilentlyContinue) {
+        $scanResults = Invoke-UscParallel -InputObject $scanTargets -ScriptBlock $scriptBlock -ThrottleLimit 8
+        foreach ($res in $scanResults) {
+            $sizes[$res.Key] = $res.Size
+        }
+    } else {
+        # Fallback to sequential scanning if RunspaceManager failed to load
+        foreach ($target in $scanTargets) {
+            $size = & $scriptBlock -target $target
+            $sizes[$target.Key] = $size.Size
         }
     }
-    if (Test-Path -LiteralPath (Join-Path $env:WINDIR 'WinSxS')) {
-        $sxsSize += 850MB
-    }
+
+    $tempSize = if ($sizes.ContainsKey('Temp')) { $sizes['Temp'] } else { 0L }
+    $recycleBinSize = if ($sizes.ContainsKey('RecycleBin')) { $sizes['RecycleBin'] } else { 0L }
+    $werSize = if ($sizes.ContainsKey('WER')) { $sizes['WER'] } else { 0L }
+    $gpuSize = if ($sizes.ContainsKey('GpuShader')) { $sizes['GpuShader'] } else { 0L }
+    $updateSize = if ($sizes.ContainsKey('WindowsUpdate')) { $sizes['WindowsUpdate'] } else { 0L }
+    $browserSize = if ($sizes.ContainsKey('Browser')) { $sizes['Browser'] } else { 0L }
+    $dumpSize = if ($sizes.ContainsKey('CrashDumps')) { $sizes['CrashDumps'] } else { 0L }
+    $sxsSize = if ($sizes.ContainsKey('ComponentStore')) { $sizes['ComponentStore'] } else { 0L }
 
     $safeTotal = $tempSize + $recycleBinSize
     $aggressiveTotal = $safeTotal + $werSize + $gpuSize + $updateSize + $browserSize

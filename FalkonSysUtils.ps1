@@ -185,7 +185,7 @@ while ($true) {
             $cleanerPath = Join-Path $PSScriptRoot 'SystemCleaner\UltimateSystemCleaner.ps1'
             if (Test-Path $cleanerPath) {
                 Write-Host "[*] Executing Safe Disk Cleanup..." -ForegroundColor Yellow
-                & $cleanerPath -Safe -ErrorAction SilentlyContinue
+                & $cleanerPath -Safe -WhatIfOnly:$false -GenerateReport
             }
 
             # 3. Registry Optimizer

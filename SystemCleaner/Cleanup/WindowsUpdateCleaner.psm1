@@ -17,7 +17,7 @@ function Invoke-UscWindowsUpdateCleanup {
     $size = Measure-UscObjectSum -InputObject $items -Property Length
 
     if ($WhatIfOnly) {
-        return New-UscOperationResult -Name 'Windows Update Cache' -Category Clean -Status Skipped -BytesFreed $size -Paths @($path) -Message 'Dry run: update download cache would be purged'
+        return New-UscOperationResult -Name 'Windows Update Cache' -Category Clean -Status Simulated -BytesFreed $size -Paths @($path) -Message 'Dry run: update download cache would be purged'
     }
 
     $services = @('wuauserv', 'bits', 'dosvc', 'CryptSvc')

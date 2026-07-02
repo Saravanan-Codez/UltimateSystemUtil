@@ -21,6 +21,11 @@ Describe 'UltimateSystemCleaner configuration' {
         }
     }
 
+    It 'defaults DryRunDefault to false for real cleanup' {
+        $config = Get-UscDefaultConfig
+        $config.DryRunDefault | Should Be $false
+    }
+
     It 'loads the default configuration' {
         $config = Get-UscDefaultConfig
         $config.Version | Should Be '0.2'
@@ -96,6 +101,57 @@ Describe 'UltimateSystemCleaner Parallel Execution Manager' {
     }
 }
 
+Describe 'UltimateSystemCleaner report generation' {
+    BeforeAll {
+        Import-Module (Join-Path $root 'Reports\JsonReport.psm1') -Force
+        Import-Module (Join-Path $root 'Reports\HtmlReport.psm1') -Force
+        Import-Module (Join-Path $root 'Core\Progress.psm1') -Force
+        $script:ReportTestDir = Join-Path $PSScriptRoot 'ReportTest'
+        if (Test-Path -LiteralPath $script:ReportTestDir) {
+            Remove-Item -LiteralPath $script:ReportTestDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        New-Item -ItemType Directory -Path $script:ReportTestDir -Force | Out-Null
+    }
+
+    AfterAll {
+        if (Test-Path -LiteralPath $script:ReportTestDir) {
+            Remove-Item -LiteralPath $script:ReportTestDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'writes JSON, CSV, and HTML reports for a run record' {
+        $run = [pscustomobject]@{
+            RunId = 'test-run'
+            Mode = 'Safe'
+            Started = Get-Date
+            Finished = Get-Date
+            ComputerName = $env:COMPUTERNAME
+            UserName = $env:USERNAME
+            IsAdministrator = $false
+            WhatIfOnly = $false
+            TotalBytesFreed = [Int64]1024
+            Before = @([pscustomobject]@{ Drive = 'C:'; FreeSpace = [Int64]1000; UsedSpace = [Int64]9000; Size = [Int64]10000; PercentFree = 10; VolumeName = 'OS'; FileSystem = 'NTFS' })
+            After = @([pscustomobject]@{ Drive = 'C:'; FreeSpace = [Int64]2024; UsedSpace = [Int64]7976; Size = [Int64]10000; PercentFree = 20; VolumeName = 'OS'; FileSystem = 'NTFS' })
+            Results = @((New-UscOperationResult -Name 'User Temp' -Category Clean -Status Succeeded -BytesFreed 1024 -Message 'ok'))
+        }
+
+        $json = New-UscJsonReport -Run $run -OutputDirectory $script:ReportTestDir
+        $csv = New-UscCsvReport -Results $run.Results -OutputDirectory $script:ReportTestDir -RunId $run.RunId
+        $html = New-UscHtmlReport -Run $run -OutputDirectory $script:ReportTestDir
+
+        Test-Path -LiteralPath $json | Should Be $true
+        Test-Path -LiteralPath $csv | Should Be $true
+        Test-Path -LiteralPath $html | Should Be $true
+        (Get-Content -LiteralPath $html -Raw) | Should Match 'Ultimate System Cleaner Report'
+    }
+}
+
+Describe 'UltimateSystemCleaner operation console output' {
+    It 'accepts Simulated status on operation results' {
+        $result = New-UscOperationResult -Name 'Recycle Bin' -Category Clean -Status Simulated -BytesFreed 512 -Message 'Would clear'
+        $result.Status | Should Be 'Simulated'
+    }
+}
 Describe 'UltimateSystemCleaner Directory Sizing & Reparse Point Filtering' {
     BeforeAll {
         $script:SizeTestDir = Join-Path $PSScriptRoot 'SizeTest'

@@ -10,7 +10,7 @@ function Get-UscDefaultConfig {
         ConfirmNuclearActions = $true
         CreateRestorePoint = $true
         EnableStorageSenseIntegration = $true
-        DryRunDefault = $true
+        DryRunDefault = $false
         Exclusions = @(
             '%USERPROFILE%\Downloads\Keep',
             '%ProgramData%\Package Cache'
@@ -26,6 +26,9 @@ function Get-UscDefaultConfig {
             WindowsUpdateCache = $true
             GpuShaderCache = $true
             BrowserCache = $true
+            DnsFlush = $true
+            FontCache = $true
+            DeliveryOptimization = $true
         }
         Nuclear = @{
             CrashDumps = $true

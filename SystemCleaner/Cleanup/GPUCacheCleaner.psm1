@@ -7,6 +7,22 @@ function Invoke-UscGpuCacheCleanup {
         [switch]$WhatIfOnly
     )
 
+    $gpuProcesses = @('nvcontainer', 'nvidia share', 'AMDRSServ', 'Steam', 'EpicGamesLauncher', 'GalaxyClient', 'dxdiag')
+    $runningGpu = @()
+    foreach ($proc in $gpuProcesses) {
+        if (Get-Process -Name $proc -ErrorAction SilentlyContinue) {
+            $runningGpu += $proc
+        }
+    }
+
+    if ($runningGpu.Count -gt 0 -and -not $WhatIfOnly) {
+        Write-UscLog -Level Warning -Message "Active GPU controller/game launcher processes detected: $($runningGpu -join ', ')."
+        if ($Host.UI -ne $null -and ($Host.Name -eq 'ConsoleHost' -or $Host.Name -eq 'Visual Studio Code Host')) {
+            Write-Host "[!] WARNING: Active GPU controllers/game overlay processes detected: $($runningGpu -join ', ')." -ForegroundColor Yellow
+            Write-Host "    Some shader cache files may be locked by these processes." -ForegroundColor Gray
+        }
+    }
+
     $paths = @(
         (Join-Path $env:LOCALAPPDATA 'NVIDIA\DXCache')
         (Join-Path $env:LOCALAPPDATA 'NVIDIA\GLCache')
@@ -23,7 +39,7 @@ function Invoke-UscGpuCacheCleanup {
             continue
         }
         
-        $items = @(Get-ChildItem -LiteralPath $path -Force -Recurse -ErrorAction SilentlyContinue | Where-Object { -not $_.PSIsContainer })
+        $items = @(Get-ChildItem -LiteralPath $path -Force -Recurse -File -ErrorAction SilentlyContinue | Where-Object { -not $_.PSIsContainer })
         $size = Measure-UscObjectSum -InputObject $items -Property Length
         $failed = 0
         foreach ($item in $items) {
@@ -53,10 +69,10 @@ function Invoke-UscGpuCacheCleanup {
             }
         }
 
-        $results.Add((New-UscOperationResult -Name 'GPU Shader Cache' -Category Clean -Status $(if ($failed) { 'PartiallySucceeded' } else { 'Succeeded' }) -BytesFreed $size -Paths @($path) -Message "$($items.Count) candidate files, $failed skipped"))
+        $status = if ($WhatIfOnly) { 'Simulated' } elseif ($failed -gt 0) { 'PartiallySucceeded' } else { 'Succeeded' }
+        $results.Add((New-UscOperationResult -Name 'GPU Shader Cache' -Category Clean -Status $status -BytesFreed $size -Paths @($path) -Message "$($items.Count) candidate files, $failed skipped"))
     }
     return @($results)
 }
 
 Export-ModuleMember -Function Invoke-UscGpuCacheCleanup
-
